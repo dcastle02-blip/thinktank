@@ -51,15 +51,15 @@
 
 <div id="libraryOverlay" class="overlay hidden">
   <div class="setup">
-    <div class="modal-top"><div><h2>Knowledge Library</h2><div class="small">Persistent text files indexed for GPT + Claude retrieval.</div></div><button class="btn" id="closeLibraryBtn">Close</button></div>
+    <div class="modal-top"><div><h2>Knowledge Library</h2><div class="small">Persistent text and Word (.docx) files indexed for GPT + Claude retrieval.</div></div><button class="btn" id="closeLibraryBtn">Close</button></div>
     <div class="library-tools">
-      <input id="fileInput" type="file" multiple hidden accept=".txt,.md,.csv,.json,.sql,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.toml,text/plain,text/markdown,text/csv,application/json" />
+      <input id="fileInput" type="file" multiple hidden accept=".txt,.md,.csv,.json,.sql,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.toml,.docx,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
       <input id="folderInput" type="file" multiple webkitdirectory directory hidden />
-      <button class="btn primary" id="addFilesBtn">Add Text Files</button>
+      <button class="btn primary" id="addFilesBtn">Add Files</button>
       <button class="btn" id="addFolderBtn">Add Folder</button>
       <button class="btn" id="refreshLibraryBtn">Refresh</button>
     </div>
-    <div class="small">Files are processed one at a time, split into searchable sections, and stored in Supabase. Duplicate file contents are skipped automatically.</div>
+    <div class="small">Supports plain-text/code files and modern Word .docx files. Word text is extracted in your browser; embedded images are ignored. Files are then split into searchable sections and stored in Supabase. Duplicate file contents are skipped automatically.</div>
     <div id="uploadProgressWrap" class="hidden">
       <div class="progress"><div id="uploadProgressBar"></div></div>
       <div class="upload-detail" id="uploadDetail"></div>
@@ -71,7 +71,7 @@
 <div class="app" id="app">
   <header>
     <div class="top">
-      <div class="title-wrap"><h1>Think Tank</h1><div class="sub">Dylan + GPT + Claude · persistent text knowledge library</div></div>
+      <div class="title-wrap"><h1>Think Tank</h1><div class="sub">Dylan + GPT + Claude · persistent knowledge library</div></div>
       <div class="header-actions"><button class="btn" id="libraryBtn">Library</button><button class="btn" id="settingsBtn">Settings</button><button class="btn" id="newBtn">New</button></div>
     </div>
   </header>
@@ -80,9 +80,9 @@
 
   <div class="composer">
     <div class="composer-inner">
-      <textarea id="question" placeholder="Ask the think tank... uploaded text files are searched automatically"></textarea>
+      <textarea id="question" placeholder="Ask the think tank... uploaded library files are searched automatically"></textarea>
       <div class="library-row">
-        <button class="btn small-btn" id="quickAddBtn">+ Text Files</button>
+        <button class="btn small-btn" id="quickAddBtn">+ Files</button>
         <button class="btn small-btn" id="quickFolderBtn">+ Folder</button>
         <span class="library-summary" id="librarySummary">Library: loading…</span>
       </div>
@@ -97,6 +97,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.3/mammoth.browser.min.js"></script>
 <script>
   const BASE = "https://ddxhpsgwxqoejghmsatg.supabase.co/functions/v1";
   const RELAY_URL = `${BASE}/relay`;
@@ -114,6 +115,7 @@
   const CHUNK_OVERLAP = 350;
   const CHUNKS_PER_REQUEST = 30;
   const TEXT_EXTENSIONS = new Set(["txt","md","csv","json","sql","js","ts","py","html","css","xml","yaml","yml","log","ini","cfg","conf","toml"]);
+  const WORD_EXTENSIONS = new Set(["docx"]);
 
   let transcript = safeParse(localStorage.getItem(STORAGE.transcript), []);
   let nextSpeaker = localStorage.getItem(STORAGE.nextSpeaker) || "GPT";
@@ -128,10 +130,11 @@
   function escapeHtml(value){ return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
   function speakerClass(name){ return ["Dylan","GPT","Claude","Consensus"].includes(name) ? name : "Dylan"; }
   function formatBytes(bytes){ if (!Number.isFinite(Number(bytes))) return ""; bytes=Number(bytes); if(bytes<1024)return `${bytes} B`; if(bytes<1048576)return `${(bytes/1024).toFixed(1)} KB`; return `${(bytes/1048576).toFixed(1)} MB`; }
+  function extensionOf(file){ return (file.name.split(".").pop() || "").toLowerCase(); }
 
   function render(){
     if (!transcript.length) {
-      $("messages").innerHTML = `<div class="empty"><strong>Start a discussion.</strong><br>Upload a large text library once, then ask questions normally. The relay retrieves relevant sections for each GPT/Claude turn.</div>`;
+      $("messages").innerHTML = `<div class="empty"><strong>Start a discussion.</strong><br>Upload a large text/Word library once, then ask questions normally. The relay retrieves relevant sections for each GPT/Claude turn.</div>`;
     } else {
       $("messages").innerHTML = transcript.map(turn => {
         const label = turn.speaker === "Consensus" ? "CONSENSUS OUTPUT" : escapeHtml(turn.speaker).toUpperCase();
@@ -150,7 +153,7 @@
 
   function renderLibrary(){
     if (!documents.length) {
-      $("docList").innerHTML = `<div class="library-empty">No text files indexed yet.</div>`;
+      $("docList").innerHTML = `<div class="library-empty">No library files indexed yet.</div>`;
       renderLibrarySummary();
       return;
     }
@@ -199,13 +202,37 @@
   }
 
   function isTextFile(file){
-    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    const ext = extensionOf(file);
     return TEXT_EXTENSIONS.has(ext) || String(file.type || "").startsWith("text/") || file.type === "application/json";
+  }
+
+  function isWordFile(file){
+    return WORD_EXTENSIONS.has(extensionOf(file)) || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+
+  function isSupportedFile(file){
+    return isTextFile(file) || isWordFile(file);
   }
 
   async function sha256Hex(buffer){
     const digest = await crypto.subtle.digest("SHA-256", buffer);
     return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,"0")).join("");
+  }
+
+  async function extractFileText(file, buffer){
+    if (isWordFile(file)) {
+      if (!window.mammoth || typeof window.mammoth.extractRawText !== "function") {
+        throw new Error("Word parser failed to load. Refresh the page and try the .docx again.");
+      }
+      const result = await window.mammoth.extractRawText({arrayBuffer:buffer});
+      const text = String(result?.value || "").replace(/\r\n/g,"\n").trim();
+      if (!text) throw new Error("No readable text was found in this .docx file.");
+      return text;
+    }
+
+    const text = new TextDecoder("utf-8", {fatal:false}).decode(buffer);
+    if (text.slice(0,10000).includes("\u0000")) throw new Error("File appears to be binary rather than supported text.");
+    return text;
   }
 
   function chunkText(text){
@@ -229,16 +256,15 @@
   }
 
   async function uploadOneFile(file){
-    if (!isTextFile(file)) return {status:"skipped",reason:"not text"};
+    if (!isSupportedFile(file)) return {status:"skipped",reason:"unsupported"};
     if (file.size > MAX_FILE_BYTES) return {status:"skipped",reason:`over ${formatBytes(MAX_FILE_BYTES)}`};
 
     const buffer = await file.arrayBuffer();
     const hash = await sha256Hex(buffer);
-    const text = new TextDecoder("utf-8", {fatal:false}).decode(buffer);
+    const text = await extractFileText(file, buffer);
     if (!text.trim()) return {status:"skipped",reason:"empty"};
-    if (text.slice(0,10000).includes("\u0000")) return {status:"skipped",reason:"appears binary"};
 
-    const started = await postJson(DOCUMENTS_URL,{action:"start",name:file.webkitRelativePath || file.name,fileHash:hash,mimeType:file.type || "text/plain",sizeBytes:file.size});
+    const started = await postJson(DOCUMENTS_URL,{action:"start",name:file.webkitRelativePath || file.name,fileHash:hash,mimeType:file.type || (isWordFile(file)?"application/vnd.openxmlformats-officedocument.wordprocessingml.document":"text/plain"),sizeBytes:file.size});
     if (started.duplicate) return {status:"duplicate"};
 
     const chunks = chunkText(text);
@@ -252,11 +278,11 @@
 
   async function uploadFiles(fileList){
     if (busy) return;
-    let files = Array.from(fileList || []).filter(isTextFile);
-    if (!files.length){ $("status").textContent = "No supported text files selected."; return; }
-    if (files.length > MAX_FILES_PER_BATCH){ $("status").textContent = `Select up to ${MAX_FILES_PER_BATCH.toLocaleString()} text files per batch.`; return; }
+    let files = Array.from(fileList || []).filter(isSupportedFile);
+    if (!files.length){ $("status").textContent = "No supported text or .docx files selected."; return; }
+    if (files.length > MAX_FILES_PER_BATCH){ $("status").textContent = `Select up to ${MAX_FILES_PER_BATCH.toLocaleString()} supported files per batch.`; return; }
 
-    setBusy(true, `Indexing ${files.length.toLocaleString()} text file(s)…`);
+    setBusy(true, `Indexing ${files.length.toLocaleString()} file(s)…`);
     $("libraryOverlay").classList.remove("hidden");
     $("uploadProgressWrap").classList.remove("hidden");
     let uploaded=0,duplicates=0,skipped=0,failed=0;
@@ -270,11 +296,11 @@
           if(result.status==="uploaded") uploaded++;
           else if(result.status==="duplicate") duplicates++;
           else skipped++;
-        }catch(err){ failed++; console.error("Upload failed",file.name,err); }
+        }catch(err){ failed++; console.error("Upload failed",file.name,err); $("uploadDetail").textContent = `${file.name}: ${String(err?.message || err)}`; }
       }
       $("uploadProgressBar").style.width = "100%";
       $("uploadDetail").textContent = `Indexed ${uploaded}; duplicates ${duplicates}; skipped ${skipped}; failed ${failed}.`;
-      $("status").textContent = `Knowledge Library updated: ${uploaded} new file(s), ${duplicates} duplicate(s).`;
+      $("status").textContent = `Knowledge Library updated: ${uploaded} new file(s), ${duplicates} duplicate(s), ${failed} failed.`;
       await loadLibrary();
     } finally {
       busy=false; document.body.classList.remove("loading"); $("fileInput").value=""; $("folderInput").value="";
