@@ -70,5 +70,6 @@ $("newBtn").addEventListener("click",()=>{if(transcript.length&&!confirm("Start 
 $("settingsBtn").addEventListener("click",()=>{if(confirm("Press OK to replace the relay secret. Press Cancel to keep it.")){$("secretInput").value="";$("setupOverlay").classList.remove("hidden")}});$("saveSecretBtn").addEventListener("click",async()=>{const value=$("secretInput").value.trim();if(!value)return;localStorage.setItem(STORAGE.secret,value);$("secretInput").value="";$("setupOverlay").classList.add("hidden");$("status").textContent="Relay secret saved on this device.";await loadLibrary()});$("question").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")$("sendBtn").click()});
 if(!getSecret())$("setupOverlay").classList.remove("hidden");render();if(getSecret())loadLibrary();
 </script>
+<script src="conversation-features.js"></script>
 </body>
 </html>
