@@ -11,335 +11,64 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <title>Think Tank</title>
   <style>
-    :root{
-      color-scheme:dark;
-      --bg:#0b0f14;--panel:#111821;--panel2:#151e29;--border:#263241;
-      --text:#edf3f8;--muted:#91a0af;--accent:#dbeafe;--accentText:#08111d;
-      --dylan:#253448;--gpt:#123c34;--claude:#46301f;--consensus:#3c2f62;--danger:#582929;
-      --shadow:0 10px 30px rgba(0,0,0,.28);
-    }
-    *{box-sizing:border-box}
-    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    button,textarea,input{font:inherit}button{cursor:pointer}
-    .app{max-width:820px;margin:0 auto;min-height:100dvh}
-    header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top)) 16px 12px;background:rgba(11,15,20,.94);backdrop-filter:blur(18px);border-bottom:1px solid var(--border)}
-    .top{display:flex;align-items:center;justify-content:space-between;gap:12px}.title-wrap{min-width:0}
-    h1{font-size:20px;line-height:1.1;margin:0}.sub{font-size:12px;color:var(--muted);margin-top:5px}.header-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+    :root{color-scheme:dark;--bg:#0b0f14;--panel:#111821;--panel2:#151e29;--border:#263241;--text:#edf3f8;--muted:#91a0af;--accent:#dbeafe;--accentText:#08111d;--dylan:#253448;--gpt:#123c34;--claude:#46301f;--consensus:#3c2f62;--danger:#582929;--shadow:0 10px 30px rgba(0,0,0,.28)}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,textarea,input{font:inherit}button{cursor:pointer}.app{max-width:820px;margin:0 auto;min-height:100dvh}
+    header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top)) 16px 12px;background:rgba(11,15,20,.94);backdrop-filter:blur(18px);border-bottom:1px solid var(--border)}.top{display:flex;align-items:center;justify-content:space-between;gap:12px}.title-wrap{min-width:0}h1{font-size:20px;line-height:1.1;margin:0}.sub{font-size:12px;color:var(--muted);margin-top:5px}.header-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
     .btn{border:1px solid var(--border);border-radius:12px;padding:10px 13px;background:var(--panel2);color:var(--text);font-weight:650}.btn.primary{background:var(--accent);color:var(--accentText);border-color:transparent}.btn.finalize{background:var(--consensus);border-color:#665494}.btn.danger{background:var(--danger)}.btn.small-btn{padding:7px 9px;font-size:12px}
-    #messages{padding:16px 14px 360px}.empty{padding:72px 24px;text-align:center;color:var(--muted);line-height:1.6}.empty strong{color:var(--text)}
-    .card{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--panel);box-shadow:var(--shadow);margin-bottom:16px}.card-head{padding:9px 13px;font-size:12px;font-weight:800;letter-spacing:.08em}.card-body{padding:14px 15px 16px;font-size:16px;line-height:1.58;white-space:pre-wrap;word-wrap:break-word}.speaker-Dylan .card-head{background:var(--dylan)}.speaker-GPT .card-head{background:var(--gpt)}.speaker-Claude .card-head{background:var(--claude)}.speaker-Consensus{border-color:#665494}.speaker-Consensus .card-head{background:var(--consensus)}
-    .composer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(11,15,20,.97);backdrop-filter:blur(20px);border-top:1px solid var(--border);padding:12px max(14px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}.composer-inner{max-width:820px;margin:0 auto}
-    textarea{width:100%;min-height:78px;max-height:180px;resize:vertical;border:1px solid var(--border);border-radius:14px;background:var(--panel);color:var(--text);padding:13px 14px;outline:none}textarea:focus,input:focus{border-color:#4d6783}
-    .library-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}.library-summary{font-size:12px;color:var(--muted);margin-left:auto}
-    .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}.actions .btn{width:100%}.finalize-row{margin-top:8px}.finalize-row .btn{width:100%}
-    .status{font-size:12px;color:var(--muted);min-height:17px;margin-top:8px;line-height:1.35}.usage{font-size:12px;color:var(--muted);margin-top:4px}.loading .btn,.loading textarea,.loading input{opacity:.55;pointer-events:none}
-    .overlay{position:fixed;inset:0;z-index:100;background:rgba(7,10,14,.98);display:flex;align-items:center;justify-content:center;padding:22px}.overlay.hidden{display:none}.setup{width:100%;max-width:680px;max-height:88dvh;overflow:auto;border:1px solid var(--border);background:var(--panel);border-radius:20px;padding:22px;box-shadow:var(--shadow)}.setup h2{margin:0 0 8px}.setup p{color:var(--muted);line-height:1.5}.setup input[type=password]{width:100%;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--bg);color:var(--text);margin:8px 0 10px}.small{font-size:12px;color:var(--muted);margin-top:10px}
-    .modal-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.library-tools{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.doc-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}.doc{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:12px;padding:10px;background:var(--bg)}.doc-main{min-width:0;flex:1}.doc-name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.doc-meta{font-size:11px;color:var(--muted);margin-top:3px}.library-empty{padding:28px 12px;text-align:center;color:var(--muted)}
-    .progress{margin-top:10px;border:1px solid var(--border);border-radius:999px;height:8px;overflow:hidden;background:var(--bg)}.progress>div{height:100%;background:var(--accent);width:0%;transition:width .15s ease}.upload-detail{font-size:12px;color:var(--muted);margin-top:7px;min-height:18px}
+    #messages{padding:16px 14px 360px}.empty{padding:72px 24px;text-align:center;color:var(--muted);line-height:1.6}.empty strong{color:var(--text)}.card{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--panel);box-shadow:var(--shadow);margin-bottom:16px}.card-head{padding:9px 13px;font-size:12px;font-weight:800;letter-spacing:.08em}.card-body{padding:14px 15px 16px;font-size:16px;line-height:1.58;white-space:pre-wrap;word-wrap:break-word}.speaker-Dylan .card-head{background:var(--dylan)}.speaker-GPT .card-head{background:var(--gpt)}.speaker-Claude .card-head{background:var(--claude)}.speaker-Consensus{border-color:#665494}.speaker-Consensus .card-head{background:var(--consensus)}
+    .composer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(11,15,20,.97);backdrop-filter:blur(20px);border-top:1px solid var(--border);padding:12px max(14px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}.composer-inner{max-width:820px;margin:0 auto}textarea{width:100%;min-height:78px;max-height:180px;resize:vertical;border:1px solid var(--border);border-radius:14px;background:var(--panel);color:var(--text);padding:13px 14px;outline:none}textarea:focus,input:focus{border-color:#4d6783}
+    .library-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}.library-summary{font-size:12px;color:var(--muted);margin-left:auto}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}.actions .btn{width:100%}.finalize-row{margin-top:8px}.finalize-row .btn{width:100%}.status{font-size:12px;color:var(--muted);min-height:17px;margin-top:8px;line-height:1.35}.usage{font-size:12px;color:var(--muted);margin-top:4px}.loading .btn,.loading textarea,.loading input{opacity:.55;pointer-events:none}
+    .overlay{position:fixed;inset:0;z-index:100;background:rgba(7,10,14,.98);display:flex;align-items:center;justify-content:center;padding:22px}.overlay.hidden{display:none}.setup{width:100%;max-width:680px;max-height:88dvh;overflow:auto;border:1px solid var(--border);background:var(--panel);border-radius:20px;padding:22px;box-shadow:var(--shadow)}.setup h2{margin:0 0 8px}.setup p{color:var(--muted);line-height:1.5}.setup input[type=password]{width:100%;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--bg);color:var(--text);margin:8px 0 10px}.small{font-size:12px;color:var(--muted);margin-top:10px}.modal-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.library-tools{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.doc-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}.doc{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:12px;padding:10px;background:var(--bg)}.doc-main{min-width:0;flex:1}.doc-name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.doc-meta{font-size:11px;color:var(--muted);margin-top:3px}.library-empty{padding:28px 12px;text-align:center;color:var(--muted)}.progress{margin-top:10px;border:1px solid var(--border);border-radius:999px;height:8px;overflow:hidden;background:var(--bg)}.progress>div{height:100%;background:var(--accent);width:0%;transition:width .15s ease}.upload-detail{font-size:12px;color:var(--muted);margin-top:7px;min-height:18px}
     @media (min-width:700px){#messages{padding-left:24px;padding-right:24px}.composer{padding-left:24px;padding-right:24px}}
   </style>
 </head>
 <body>
-<div id="setupOverlay" class="overlay hidden">
-  <div class="setup" style="max-width:460px">
-    <h2>Connect Think Tank</h2>
-    <p>Enter your relay secret. It is stored only in this browser on this device. Provider API keys stay in Supabase.</p>
-    <input id="secretInput" type="password" placeholder="Relay secret" autocomplete="off" />
-    <button class="btn primary" id="saveSecretBtn" style="width:100%">Save & Open</button>
-  </div>
-</div>
-
-<div id="libraryOverlay" class="overlay hidden">
-  <div class="setup">
-    <div class="modal-top"><div><h2>Knowledge Library</h2><div class="small">Persistent text and Word (.docx) files indexed for GPT + Claude retrieval.</div></div><button class="btn" id="closeLibraryBtn">Close</button></div>
-    <div class="library-tools">
-      <input id="fileInput" type="file" multiple hidden accept=".txt,.md,.csv,.json,.sql,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.toml,.docx,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-      <input id="folderInput" type="file" multiple webkitdirectory directory hidden />
-      <button class="btn primary" id="addFilesBtn">Add Files</button>
-      <button class="btn" id="addFolderBtn">Add Folder</button>
-      <button class="btn" id="refreshLibraryBtn">Refresh</button>
-    </div>
-    <div class="small">Supports plain-text/code files and modern Word .docx files. Word text is extracted in your browser; embedded images are ignored. Files are then split into searchable sections and stored in Supabase. Duplicate file contents are skipped automatically.</div>
-    <div id="uploadProgressWrap" class="hidden">
-      <div class="progress"><div id="uploadProgressBar"></div></div>
-      <div class="upload-detail" id="uploadDetail"></div>
-    </div>
-    <div class="doc-list" id="docList"></div>
-  </div>
-</div>
-
-<div class="app" id="app">
-  <header>
-    <div class="top">
-      <div class="title-wrap"><h1>Think Tank</h1><div class="sub">Dylan + GPT + Claude · persistent knowledge library</div></div>
-      <div class="header-actions"><button class="btn" id="libraryBtn">Library</button><button class="btn" id="settingsBtn">Settings</button><button class="btn" id="newBtn">New</button></div>
-    </div>
-  </header>
-
-  <main id="messages"></main>
-
-  <div class="composer">
-    <div class="composer-inner">
-      <textarea id="question" placeholder="Ask the think tank... uploaded library files are searched automatically"></textarea>
-      <div class="library-row">
-        <button class="btn small-btn" id="quickAddBtn">+ Files</button>
-        <button class="btn small-btn" id="quickFolderBtn">+ Folder</button>
-        <span class="library-summary" id="librarySummary">Library: loading…</span>
-      </div>
-      <div class="actions">
-        <button class="btn" id="nextBtn">Next Response</button>
-        <button class="btn primary" id="sendBtn">Send</button>
-      </div>
-      <div class="finalize-row"><button class="btn finalize" id="finalizeBtn">Finalize Discussion</button></div>
-      <div class="status" id="status"></div>
-      <div class="usage" id="usage"></div>
-    </div>
-  </div>
-</div>
-
+<div id="setupOverlay" class="overlay hidden"><div class="setup" style="max-width:460px"><h2>Connect Think Tank</h2><p>Enter your relay secret. It is stored only in this browser on this device. Provider API keys stay in Supabase.</p><input id="secretInput" type="password" placeholder="Relay secret" autocomplete="off" /><button class="btn primary" id="saveSecretBtn" style="width:100%">Save & Open</button></div></div>
+<div id="libraryOverlay" class="overlay hidden"><div class="setup"><div class="modal-top"><div><h2>Knowledge Library</h2><div class="small">Persistent text, code, Word, ZIP, and .skill content indexed for GPT + Claude retrieval.</div></div><button class="btn" id="closeLibraryBtn">Close</button></div><div class="library-tools"><input id="fileInput" type="file" multiple hidden accept=".txt,.md,.csv,.json,.sql,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.toml,.docx,.zip,.skill,text/plain,text/markdown,text/csv,application/json,application/zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document" /><input id="folderInput" type="file" multiple webkitdirectory directory hidden /><button class="btn primary" id="addFilesBtn">Add Files / ZIP</button><button class="btn" id="addFolderBtn">Add Folder</button><button class="btn" id="refreshLibraryBtn">Refresh</button></div><div class="small">ZIP and .skill packages are unpacked in your browser. Supported files inside them are indexed individually, including nested .skill packages. Word .docx text is extracted; embedded images are ignored.</div><div id="uploadProgressWrap" class="hidden"><div class="progress"><div id="uploadProgressBar"></div></div><div class="upload-detail" id="uploadDetail"></div></div><div class="doc-list" id="docList"></div></div></div>
+<div class="app" id="app"><header><div class="top"><div class="title-wrap"><h1>Think Tank</h1><div class="sub">Dylan + GPT + Claude · persistent knowledge library</div></div><div class="header-actions"><button class="btn" id="libraryBtn">Library</button><button class="btn" id="settingsBtn">Settings</button><button class="btn" id="newBtn">New</button></div></div></header><main id="messages"></main><div class="composer"><div class="composer-inner"><textarea id="question" placeholder="Ask the think tank... uploaded library files are searched automatically"></textarea><div class="library-row"><button class="btn small-btn" id="quickAddBtn">+ Files / ZIP</button><button class="btn small-btn" id="quickFolderBtn">+ Folder</button><span class="library-summary" id="librarySummary">Library: loading…</span></div><div class="actions"><button class="btn" id="nextBtn">Next Response</button><button class="btn primary" id="sendBtn">Send</button></div><div class="finalize-row"><button class="btn finalize" id="finalizeBtn">Finalize Discussion</button></div><div class="status" id="status"></div><div class="usage" id="usage"></div></div></div></div>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.3/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.2/dist/jszip.min.js"></script>
 <script>
-  const BASE = "https://ddxhpsgwxqoejghmsatg.supabase.co/functions/v1";
-  const RELAY_URL = `${BASE}/relay`;
-  const DOCUMENTS_URL = `${BASE}/documents`;
-  const STORAGE = {
-    secret: "thinktank_relay_secret",
-    transcript: "thinktank_transcript_v1",
-    nextSpeaker: "thinktank_first_speaker_v1",
-    tokens: "thinktank_tokens_v1"
-  };
-
-  const MAX_FILES_PER_BATCH = 1000;
-  const MAX_FILE_BYTES = 50 * 1024 * 1024;
-  const CHUNK_SIZE = 4200;
-  const CHUNK_OVERLAP = 350;
-  const CHUNKS_PER_REQUEST = 30;
-  const TEXT_EXTENSIONS = new Set(["txt","md","csv","json","sql","js","ts","py","html","css","xml","yaml","yml","log","ini","cfg","conf","toml"]);
-  const WORD_EXTENSIONS = new Set(["docx"]);
-
-  let transcript = safeParse(localStorage.getItem(STORAGE.transcript), []);
-  let nextSpeaker = localStorage.getItem(STORAGE.nextSpeaker) || "GPT";
-  let totalTokens = Number(localStorage.getItem(STORAGE.tokens) || "0");
-  let documents = [];
-  let busy = false;
-
-  const $ = (id) => document.getElementById(id);
-  function safeParse(value, fallback){ try { return value ? JSON.parse(value) : fallback; } catch { return fallback; } }
-  function getSecret(){ return localStorage.getItem(STORAGE.secret) || ""; }
-  function saveState(){ localStorage.setItem(STORAGE.transcript, JSON.stringify(transcript)); localStorage.setItem(STORAGE.nextSpeaker, nextSpeaker); localStorage.setItem(STORAGE.tokens, String(totalTokens)); }
-  function escapeHtml(value){ return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
-  function speakerClass(name){ return ["Dylan","GPT","Claude","Consensus"].includes(name) ? name : "Dylan"; }
-  function formatBytes(bytes){ if (!Number.isFinite(Number(bytes))) return ""; bytes=Number(bytes); if(bytes<1024)return `${bytes} B`; if(bytes<1048576)return `${(bytes/1024).toFixed(1)} KB`; return `${(bytes/1048576).toFixed(1)} MB`; }
-  function extensionOf(file){ return (file.name.split(".").pop() || "").toLowerCase(); }
-
-  function render(){
-    if (!transcript.length) {
-      $("messages").innerHTML = `<div class="empty"><strong>Start a discussion.</strong><br>Upload a large text/Word library once, then ask questions normally. The relay retrieves relevant sections for each GPT/Claude turn.</div>`;
-    } else {
-      $("messages").innerHTML = transcript.map(turn => {
-        const label = turn.speaker === "Consensus" ? "CONSENSUS OUTPUT" : escapeHtml(turn.speaker).toUpperCase();
-        return `<section class="card speaker-${speakerClass(turn.speaker)}"><div class="card-head">${label}</div><div class="card-body">${escapeHtml(turn.text)}</div></section>`;
-      }).join("");
-    }
-    $("usage").textContent = `${totalTokens ? `Session tokens: ${totalTokens.toLocaleString()} · ` : ""}Next AI: ${nextSpeaker}`;
-    renderLibrarySummary();
-  }
-
-  function renderLibrarySummary(){
-    const ready = documents.filter(d => d.status === "ready");
-    const chunks = ready.reduce((sum,d) => sum + Number(d.chunk_count || 0), 0);
-    $("librarySummary").textContent = `Library: ${ready.length.toLocaleString()} files · ${chunks.toLocaleString()} sections`;
-  }
-
-  function renderLibrary(){
-    if (!documents.length) {
-      $("docList").innerHTML = `<div class="library-empty">No library files indexed yet.</div>`;
-      renderLibrarySummary();
-      return;
-    }
-    $("docList").innerHTML = documents.map(doc => `<div class="doc"><div class="doc-main"><div class="doc-name">${escapeHtml(doc.name)}</div><div class="doc-meta">${escapeHtml(doc.status)} · ${formatBytes(doc.size_bytes)} · ${Number(doc.chunk_count||0).toLocaleString()} sections</div></div><button class="btn danger small-btn" data-delete-doc="${escapeHtml(doc.id)}">Delete</button></div>`).join("");
-    document.querySelectorAll("[data-delete-doc]").forEach(btn => btn.addEventListener("click", () => deleteDocument(btn.dataset.deleteDoc)));
-    renderLibrarySummary();
-  }
-
-  function setBusy(value, message=""){
-    busy = value;
-    document.body.classList.toggle("loading", value);
-    if (message) $("status").textContent = message;
-  }
-
-  async function postJson(url, payload){
-    const secret = getSecret();
-    if (!secret) { $("setupOverlay").classList.remove("hidden"); throw new Error("Relay secret required"); }
-    const response = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json","x-relay-secret":secret}, body:JSON.stringify(payload) });
-    let data;
-    try { data = await response.json(); } catch { throw new Error(`HTTP ${response.status} returned non-JSON data`); }
-    if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-    return data;
-  }
-
-  async function callRelay(payload, busyMessage){
-    if (busy) return null;
-    setBusy(true, busyMessage);
-    try {
-      const data = await postJson(RELAY_URL, payload);
-      transcript = Array.isArray(data.transcript) ? data.transcript : transcript;
-      nextSpeaker = data.nextSpeaker === "Claude" ? "Claude" : "GPT";
-      totalTokens += Number(data?.usage?.roundTokens || 0);
-      saveState(); render();
-      const knowledge = data?.knowledge;
-      if (knowledge?.chunksUsed) $("status").textContent = `Used ${knowledge.chunksUsed} library sections from ${knowledge.filesUsed?.length || 0} file(s).`;
-      setTimeout(() => window.scrollTo({ top:document.body.scrollHeight, behavior:"smooth" }), 40);
-      return data;
-    } catch(err){ $("status").textContent = `Error: ${String(err?.message || err)}`; return null; }
-    finally { busy=false; document.body.classList.remove("loading"); }
-  }
-
-  async function loadLibrary(){
-    if (!getSecret()) return;
-    try { const data = await postJson(DOCUMENTS_URL,{action:"list"}); documents = Array.isArray(data.documents) ? data.documents : []; renderLibrary(); }
-    catch(err){ $("librarySummary").textContent = "Library unavailable"; $("uploadDetail").textContent = `Library error: ${String(err?.message || err)}`; }
-  }
-
-  function isTextFile(file){
-    const ext = extensionOf(file);
-    return TEXT_EXTENSIONS.has(ext) || String(file.type || "").startsWith("text/") || file.type === "application/json";
-  }
-
-  function isWordFile(file){
-    return WORD_EXTENSIONS.has(extensionOf(file)) || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  }
-
-  function isSupportedFile(file){
-    return isTextFile(file) || isWordFile(file);
-  }
-
-  async function sha256Hex(buffer){
-    const digest = await crypto.subtle.digest("SHA-256", buffer);
-    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,"0")).join("");
-  }
-
-  async function extractFileText(file, buffer){
-    if (isWordFile(file)) {
-      if (!window.mammoth || typeof window.mammoth.extractRawText !== "function") {
-        throw new Error("Word parser failed to load. Refresh the page and try the .docx again.");
-      }
-      const result = await window.mammoth.extractRawText({arrayBuffer:buffer});
-      const text = String(result?.value || "").replace(/\r\n/g,"\n").trim();
-      if (!text) throw new Error("No readable text was found in this .docx file.");
-      return text;
-    }
-
-    const text = new TextDecoder("utf-8", {fatal:false}).decode(buffer);
-    if (text.slice(0,10000).includes("\u0000")) throw new Error("File appears to be binary rather than supported text.");
-    return text;
-  }
-
-  function chunkText(text){
-    const chunks=[];
-    let start=0;
-    while(start < text.length){
-      let end = Math.min(start + CHUNK_SIZE, text.length);
-      if(end < text.length){
-        const minBreak = start + Math.floor(CHUNK_SIZE * 0.65);
-        const newline = text.lastIndexOf("\n", end);
-        const space = text.lastIndexOf(" ", end);
-        const candidate = Math.max(newline, space);
-        if(candidate > minBreak) end = candidate + 1;
-      }
-      const content = text.slice(start,end).trim();
-      if(content) chunks.push(content);
-      if(end >= text.length) break;
-      start = Math.max(end - CHUNK_OVERLAP, start + 1);
-    }
-    return chunks;
-  }
-
-  async function uploadOneFile(file){
-    if (!isSupportedFile(file)) return {status:"skipped",reason:"unsupported"};
-    if (file.size > MAX_FILE_BYTES) return {status:"skipped",reason:`over ${formatBytes(MAX_FILE_BYTES)}`};
-
-    const buffer = await file.arrayBuffer();
-    const hash = await sha256Hex(buffer);
-    const text = await extractFileText(file, buffer);
-    if (!text.trim()) return {status:"skipped",reason:"empty"};
-
-    const started = await postJson(DOCUMENTS_URL,{action:"start",name:file.webkitRelativePath || file.name,fileHash:hash,mimeType:file.type || (isWordFile(file)?"application/vnd.openxmlformats-officedocument.wordprocessingml.document":"text/plain"),sizeBytes:file.size});
-    if (started.duplicate) return {status:"duplicate"};
-
-    const chunks = chunkText(text);
-    for(let i=0;i<chunks.length;i+=CHUNKS_PER_REQUEST){
-      const batch = chunks.slice(i,i+CHUNKS_PER_REQUEST).map((content,offset)=>({index:i+offset,content}));
-      await postJson(DOCUMENTS_URL,{action:"chunks",documentId:started.documentId,chunks:batch});
-    }
-    await postJson(DOCUMENTS_URL,{action:"complete",documentId:started.documentId,chunkCount:chunks.length});
-    return {status:"uploaded",chunks:chunks.length};
-  }
-
-  async function uploadFiles(fileList){
-    if (busy) return;
-    let files = Array.from(fileList || []).filter(isSupportedFile);
-    if (!files.length){ $("status").textContent = "No supported text or .docx files selected."; return; }
-    if (files.length > MAX_FILES_PER_BATCH){ $("status").textContent = `Select up to ${MAX_FILES_PER_BATCH.toLocaleString()} supported files per batch.`; return; }
-
-    setBusy(true, `Indexing ${files.length.toLocaleString()} file(s)…`);
-    $("libraryOverlay").classList.remove("hidden");
-    $("uploadProgressWrap").classList.remove("hidden");
-    let uploaded=0,duplicates=0,skipped=0,failed=0;
-    try{
-      for(let i=0;i<files.length;i++){
-        const file=files[i];
-        $("uploadProgressBar").style.width = `${Math.round((i/files.length)*100)}%`;
-        $("uploadDetail").textContent = `${i+1} / ${files.length}: ${file.webkitRelativePath || file.name}`;
-        try{
-          const result = await uploadOneFile(file);
-          if(result.status==="uploaded") uploaded++;
-          else if(result.status==="duplicate") duplicates++;
-          else skipped++;
-        }catch(err){ failed++; console.error("Upload failed",file.name,err); $("uploadDetail").textContent = `${file.name}: ${String(err?.message || err)}`; }
-      }
-      $("uploadProgressBar").style.width = "100%";
-      $("uploadDetail").textContent = `Indexed ${uploaded}; duplicates ${duplicates}; skipped ${skipped}; failed ${failed}.`;
-      $("status").textContent = `Knowledge Library updated: ${uploaded} new file(s), ${duplicates} duplicate(s), ${failed} failed.`;
-      await loadLibrary();
-    } finally {
-      busy=false; document.body.classList.remove("loading"); $("fileInput").value=""; $("folderInput").value="";
-    }
-  }
-
-  async function deleteDocument(id){
-    const doc=documents.find(d=>d.id===id); if(!doc) return;
-    if(!confirm(`Delete ${doc.name} from the Think Tank library?`)) return;
-    try{ await postJson(DOCUMENTS_URL,{action:"delete",documentId:id}); await loadLibrary(); $("status").textContent = `Deleted ${doc.name}.`; }
-    catch(err){ $("status").textContent = `Delete failed: ${String(err?.message || err)}`; }
-  }
-
-  $("sendBtn").addEventListener("click", async()=>{
-    const text=$("question").value.trim(); if(!text)return;
-    const data=await callRelay({action:"message",message:text,transcript,nextSpeaker},`${nextSpeaker} is starting. Both AIs will respond…`);
-    if(data){ $("question").value=""; if(!data?.knowledge?.chunksUsed) $("status").textContent="Both AIs responded. No matching library section was needed/found."; }
-  });
-  $("nextBtn").addEventListener("click",async()=>{ if(!transcript.length){$("status").textContent="Start a conversation first.";return;} const speaker=nextSpeaker; const data=await callRelay({action:"next",transcript,nextSpeaker:speaker},`${speaker} is responding…`); if(data&&!data?.knowledge?.chunksUsed)$("status").textContent=`${speaker} responded.`; });
-  $("finalizeBtn").addEventListener("click",async()=>{ if(!transcript.length){$("status").textContent="Start a conversation first.";return;} if(!confirm("Finalize this discussion? GPT and Claude will draft, review, and revise toward a shared final output."))return; const data=await callRelay({action:"finalize",transcript,nextSpeaker},"GPT and Claude are building and reviewing a consensus output…"); if(data)$("status").textContent=data?.finalization?.status==="agreed"?"Consensus reached.":"Finalization completed with unresolved disagreement."; });
-
-  $("libraryBtn").addEventListener("click",async()=>{ $("libraryOverlay").classList.remove("hidden"); await loadLibrary(); });
-  $("closeLibraryBtn").addEventListener("click",()=>$("libraryOverlay").classList.add("hidden"));
-  $("addFilesBtn").addEventListener("click",()=>$("fileInput").click());
-  $("addFolderBtn").addEventListener("click",()=>$("folderInput").click());
-  $("quickAddBtn").addEventListener("click",()=>$("fileInput").click());
-  $("quickFolderBtn").addEventListener("click",()=>$("folderInput").click());
-  $("fileInput").addEventListener("change",e=>uploadFiles(e.target.files));
-  $("folderInput").addEventListener("change",e=>uploadFiles(e.target.files));
-  $("refreshLibraryBtn").addEventListener("click",loadLibrary);
-
-  $("newBtn").addEventListener("click",()=>{ if(transcript.length&&!confirm("Start a new Think Tank conversation? Your Knowledge Library will be kept."))return; transcript=[];nextSpeaker="GPT";totalTokens=0;saveState();render();$("status").textContent="New conversation started. Knowledge Library preserved.";$("question").value="";window.scrollTo({top:0,behavior:"smooth"}); });
-  $("settingsBtn").addEventListener("click",()=>{ if(confirm("Press OK to replace the relay secret. Press Cancel to keep it.")){ $("secretInput").value=""; $("setupOverlay").classList.remove("hidden"); } });
-  $("saveSecretBtn").addEventListener("click",async()=>{ const value=$("secretInput").value.trim();if(!value)return;localStorage.setItem(STORAGE.secret,value);$("secretInput").value="";$("setupOverlay").classList.add("hidden");$("status").textContent="Relay secret saved on this device.";await loadLibrary(); });
-  $("question").addEventListener("keydown",e=>{ if((e.ctrlKey||e.metaKey)&&e.key==="Enter")$("sendBtn").click(); });
-
-  if(!getSecret())$("setupOverlay").classList.remove("hidden");
-  render();
-  if(getSecret())loadLibrary();
+const BASE="https://ddxhpsgwxqoejghmsatg.supabase.co/functions/v1",RELAY_URL=`${BASE}/relay`,DOCUMENTS_URL=`${BASE}/documents`;
+const STORAGE={secret:"thinktank_relay_secret",transcript:"thinktank_transcript_v1",nextSpeaker:"thinktank_first_speaker_v1",tokens:"thinktank_tokens_v1"};
+const MAX_FILES_PER_BATCH=5000,MAX_FILE_BYTES=50*1024*1024,MAX_ARCHIVE_BYTES=250*1024*1024,MAX_EXTRACTED_BYTES=500*1024*1024,MAX_ARCHIVE_DEPTH=3,CHUNK_SIZE=4200,CHUNK_OVERLAP=350,CHUNKS_PER_REQUEST=30;
+const TEXT_EXTENSIONS=new Set(["txt","md","csv","json","sql","js","ts","py","html","css","xml","yaml","yml","log","ini","cfg","conf","toml"]),WORD_EXTENSIONS=new Set(["docx"]),ARCHIVE_EXTENSIONS=new Set(["zip","skill"]);
+let transcript=safeParse(localStorage.getItem(STORAGE.transcript),[]),nextSpeaker=localStorage.getItem(STORAGE.nextSpeaker)||"GPT",totalTokens=Number(localStorage.getItem(STORAGE.tokens)||"0"),documents=[],busy=false;
+const $=id=>document.getElementById(id);
+function safeParse(value,fallback){try{return value?JSON.parse(value):fallback}catch{return fallback}}
+function getSecret(){return localStorage.getItem(STORAGE.secret)||""}
+function saveState(){localStorage.setItem(STORAGE.transcript,JSON.stringify(transcript));localStorage.setItem(STORAGE.nextSpeaker,nextSpeaker);localStorage.setItem(STORAGE.tokens,String(totalTokens))}
+function escapeHtml(value){return String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
+function speakerClass(name){return["Dylan","GPT","Claude","Consensus"].includes(name)?name:"Dylan"}
+function formatBytes(bytes){bytes=Number(bytes);if(!Number.isFinite(bytes))return"";if(bytes<1024)return`${bytes} B`;if(bytes<1048576)return`${(bytes/1024).toFixed(1)} KB`;return`${(bytes/1048576).toFixed(1)} MB`}
+function extensionOfName(name){return(String(name).split(".").pop()||"").toLowerCase()}
+function render(){if(!transcript.length){$("messages").innerHTML=`<div class="empty"><strong>Start a discussion.</strong><br>Upload files, folders, ZIP archives, or .skill packages once, then ask questions normally. The relay retrieves relevant sections for each GPT/Claude turn.</div>`}else{$("messages").innerHTML=transcript.map(turn=>{const label=turn.speaker==="Consensus"?"CONSENSUS OUTPUT":escapeHtml(turn.speaker).toUpperCase();return`<section class="card speaker-${speakerClass(turn.speaker)}"><div class="card-head">${label}</div><div class="card-body">${escapeHtml(turn.text)}</div></section>`}).join("")}$("usage").textContent=`${totalTokens?`Session tokens: ${totalTokens.toLocaleString()} · `:""}Next AI: ${nextSpeaker}`;renderLibrarySummary()}
+function renderLibrarySummary(){const ready=documents.filter(d=>d.status==="ready"),chunks=ready.reduce((s,d)=>s+Number(d.chunk_count||0),0);$("librarySummary").textContent=`Library: ${ready.length.toLocaleString()} files · ${chunks.toLocaleString()} sections`}
+function renderLibrary(){if(!documents.length){$("docList").innerHTML=`<div class="library-empty">No library files indexed yet.</div>`;renderLibrarySummary();return}$("docList").innerHTML=documents.map(doc=>`<div class="doc"><div class="doc-main"><div class="doc-name">${escapeHtml(doc.name)}</div><div class="doc-meta">${escapeHtml(doc.status)} · ${formatBytes(doc.size_bytes)} · ${Number(doc.chunk_count||0).toLocaleString()} sections</div></div><button class="btn danger small-btn" data-delete-doc="${escapeHtml(doc.id)}">Delete</button></div>`).join("");document.querySelectorAll("[data-delete-doc]").forEach(btn=>btn.addEventListener("click",()=>deleteDocument(btn.dataset.deleteDoc)));renderLibrarySummary()}
+function setBusy(value,message=""){busy=value;document.body.classList.toggle("loading",value);if(message)$("status").textContent=message}
+async function postJson(url,payload){const secret=getSecret();if(!secret){$("setupOverlay").classList.remove("hidden");throw new Error("Relay secret required")}const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","x-relay-secret":secret},body:JSON.stringify(payload)});let data;try{data=await response.json()}catch{throw new Error(`HTTP ${response.status} returned non-JSON data`)}if(!response.ok)throw new Error(data?.error||`HTTP ${response.status}`);return data}
+async function callRelay(payload,busyMessage){if(busy)return null;setBusy(true,busyMessage);try{const data=await postJson(RELAY_URL,payload);transcript=Array.isArray(data.transcript)?data.transcript:transcript;nextSpeaker=data.nextSpeaker==="Claude"?"Claude":"GPT";totalTokens+=Number(data?.usage?.roundTokens||0);saveState();render();const knowledge=data?.knowledge;if(knowledge?.chunksUsed)$("status").textContent=`Used ${knowledge.chunksUsed} library sections from ${knowledge.filesUsed?.length||0} file(s).`;setTimeout(()=>window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"}),40);return data}catch(err){$("status").textContent=`Error: ${String(err?.message||err)}`;return null}finally{busy=false;document.body.classList.remove("loading")}}
+async function loadLibrary(){if(!getSecret())return;try{const data=await postJson(DOCUMENTS_URL,{action:"list"});documents=Array.isArray(data.documents)?data.documents:[];renderLibrary()}catch(err){$("librarySummary").textContent="Library unavailable";$("uploadDetail").textContent=`Library error: ${String(err?.message||err)}`}}
+function isTextName(name,type=""){const ext=extensionOfName(name);return TEXT_EXTENSIONS.has(ext)||String(type).startsWith("text/")||type==="application/json"}
+function isWordName(name,type=""){return WORD_EXTENSIONS.has(extensionOfName(name))||type==="application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+function isArchiveName(name,type=""){return ARCHIVE_EXTENSIONS.has(extensionOfName(name))||type==="application/zip"||type==="application/x-zip-compressed"}
+function isSupportedName(name,type=""){return isTextName(name,type)||isWordName(name,type)||isArchiveName(name,type)}
+function mimeForName(name){const ext=extensionOfName(name);if(ext==="docx")return"application/vnd.openxmlformats-officedocument.wordprocessingml.document";if(ext==="json")return"application/json";if(ext==="html")return"text/html";if(ext==="csv")return"text/csv";if(ext==="md")return"text/markdown";return"text/plain"}
+async function sha256Hex(buffer){const digest=await crypto.subtle.digest("SHA-256",buffer);return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("")}
+async function extractText(item){if(isWordName(item.name,item.type)){if(!window.mammoth||typeof window.mammoth.extractRawText!=="function")throw new Error("Word parser failed to load. Refresh and try again.");const result=await window.mammoth.extractRawText({arrayBuffer:item.buffer});const text=String(result?.value||"").replace(/\r\n/g,"\n").trim();if(!text)throw new Error("No readable text was found in this .docx file.");return text}const text=new TextDecoder("utf-8",{fatal:false}).decode(item.buffer);if(text.slice(0,10000).includes("\u0000"))throw new Error("File appears binary rather than supported text.");return text}
+function chunkText(text){const chunks=[];let start=0;while(start<text.length){let end=Math.min(start+CHUNK_SIZE,text.length);if(end<text.length){const minBreak=start+Math.floor(CHUNK_SIZE*.65),newline=text.lastIndexOf("\n",end),space=text.lastIndexOf(" ",end),candidate=Math.max(newline,space);if(candidate>minBreak)end=candidate+1}const content=text.slice(start,end).trim();if(content)chunks.push(content);if(end>=text.length)break;start=Math.max(end-CHUNK_OVERLAP,start+1)}return chunks}
+async function expandArchive(buffer,archiveName,depth,state){if(depth>MAX_ARCHIVE_DEPTH)throw new Error(`Archive nesting exceeds ${MAX_ARCHIVE_DEPTH} levels.`);if(!window.JSZip||typeof window.JSZip.loadAsync!=="function")throw new Error("ZIP parser failed to load. Refresh the page and try again.");const zip=await window.JSZip.loadAsync(buffer),out=[];for(const [entryName,entry] of Object.entries(zip.files)){if(entry.dir||entryName.startsWith("__MACOSX/")||entryName.endsWith("/.DS_Store"))continue;const fullName=`${archiveName}/${entryName}`;const ext=extensionOfName(entryName);if(!TEXT_EXTENSIONS.has(ext)&&!WORD_EXTENSIONS.has(ext)&&!ARCHIVE_EXTENSIONS.has(ext))continue;const entryBuffer=await entry.async("arraybuffer");state.extractedBytes+=entryBuffer.byteLength;if(state.extractedBytes>MAX_EXTRACTED_BYTES)throw new Error(`Archive extraction exceeds ${formatBytes(MAX_EXTRACTED_BYTES)} total.`);if(entryBuffer.byteLength>MAX_FILE_BYTES&&!ARCHIVE_EXTENSIONS.has(ext))continue;if(ARCHIVE_EXTENSIONS.has(ext)){if(entryBuffer.byteLength>MAX_ARCHIVE_BYTES)continue;out.push(...await expandArchive(entryBuffer,fullName,depth+1,state))}else{out.push({name:fullName,type:mimeForName(entryName),size:entryBuffer.byteLength,buffer:entryBuffer});state.count++}if(state.count>MAX_FILES_PER_BATCH)throw new Error(`Archive contains more than ${MAX_FILES_PER_BATCH.toLocaleString()} supported files.`)}return out}
+async function expandSelection(fileList){const selected=Array.from(fileList||[]);if(!selected.length)return[];const out=[],state={count:0,extractedBytes:0};for(const file of selected){const displayName=file.webkitRelativePath||file.name;if(!isSupportedName(displayName,file.type))continue;if(isArchiveName(displayName,file.type)){if(file.size>MAX_ARCHIVE_BYTES)throw new Error(`${displayName} exceeds the ${formatBytes(MAX_ARCHIVE_BYTES)} archive limit.`);const buffer=await file.arrayBuffer();const nested=await expandArchive(buffer,displayName,1,state);out.push(...nested)}else{if(file.size>MAX_FILE_BYTES)continue;out.push({name:displayName,type:file.type||mimeForName(displayName),size:file.size,buffer:await file.arrayBuffer()});state.count++}if(out.length>MAX_FILES_PER_BATCH)throw new Error(`Select up to ${MAX_FILES_PER_BATCH.toLocaleString()} supported files per batch.`)}return out}
+async function uploadOneItem(item){if(item.size>MAX_FILE_BYTES)return{status:"skipped",reason:`over ${formatBytes(MAX_FILE_BYTES)}`};const hash=await sha256Hex(item.buffer),text=await extractText(item);if(!text.trim())return{status:"skipped",reason:"empty"};const started=await postJson(DOCUMENTS_URL,{action:"start",name:item.name,fileHash:hash,mimeType:item.type||mimeForName(item.name),sizeBytes:item.size});if(started.duplicate)return{status:"duplicate"};const chunks=chunkText(text);for(let i=0;i<chunks.length;i+=CHUNKS_PER_REQUEST){const batch=chunks.slice(i,i+CHUNKS_PER_REQUEST).map((content,offset)=>({index:i+offset,content}));await postJson(DOCUMENTS_URL,{action:"chunks",documentId:started.documentId,chunks:batch})}await postJson(DOCUMENTS_URL,{action:"complete",documentId:started.documentId,chunkCount:chunks.length});return{status:"uploaded",chunks:chunks.length}}
+async function uploadFiles(fileList){if(busy)return;setBusy(true,"Reading selected files and archives…");$("libraryOverlay").classList.remove("hidden");$("uploadProgressWrap").classList.remove("hidden");let items=[];try{items=await expandSelection(fileList);if(!items.length){$("status").textContent="No supported files found. Supported: text/code, .docx, .zip, and .skill.";return}$("status").textContent=`Found ${items.length.toLocaleString()} indexable file(s).`;let uploaded=0,duplicates=0,skipped=0,failed=0;for(let i=0;i<items.length;i++){const item=items[i];$("uploadProgressBar").style.width=`${Math.round((i/items.length)*100)}%`;$("uploadDetail").textContent=`${i+1} / ${items.length}: ${item.name}`;try{const result=await uploadOneItem(item);if(result.status==="uploaded")uploaded++;else if(result.status==="duplicate")duplicates++;else skipped++}catch(err){failed++;console.error("Upload failed",item.name,err);$("uploadDetail").textContent=`${item.name}: ${String(err?.message||err)}`}}$("uploadProgressBar").style.width="100%";$("uploadDetail").textContent=`Indexed ${uploaded}; duplicates ${duplicates}; skipped ${skipped}; failed ${failed}.`;$("status").textContent=`Knowledge Library updated: ${uploaded} new file(s), ${duplicates} duplicate(s), ${failed} failed.`;await loadLibrary()}catch(err){$("status").textContent=`Import failed: ${String(err?.message||err)}`;$("uploadDetail").textContent=String(err?.message||err)}finally{busy=false;document.body.classList.remove("loading");$("fileInput").value="";$("folderInput").value=""}}
+async function deleteDocument(id){const doc=documents.find(d=>d.id===id);if(!doc)return;if(!confirm(`Delete ${doc.name} from the Think Tank library?`))return;try{await postJson(DOCUMENTS_URL,{action:"delete",documentId:id});await loadLibrary();$("status").textContent=`Deleted ${doc.name}.`}catch(err){$("status").textContent=`Delete failed: ${String(err?.message||err)}`}}
+$("sendBtn").addEventListener("click",async()=>{const text=$("question").value.trim();if(!text)return;const data=await callRelay({action:"message",message:text,transcript,nextSpeaker},`${nextSpeaker} is starting. Both AIs will respond…`);if(data){$("question").value="";if(!data?.knowledge?.chunksUsed)$("status").textContent="Both AIs responded. No matching library section was needed/found."}});
+$("nextBtn").addEventListener("click",async()=>{if(!transcript.length){$("status").textContent="Start a conversation first.";return}const speaker=nextSpeaker,data=await callRelay({action:"next",transcript,nextSpeaker:speaker},`${speaker} is responding…`);if(data&&!data?.knowledge?.chunksUsed)$("status").textContent=`${speaker} responded.`});
+$("finalizeBtn").addEventListener("click",async()=>{if(!transcript.length){$("status").textContent="Start a conversation first.";return}if(!confirm("Finalize this discussion? GPT and Claude will draft, review, and revise toward a shared final output."))return;const data=await callRelay({action:"finalize",transcript,nextSpeaker},"GPT and Claude are building and reviewing a consensus output…");if(data)$("status").textContent=data?.finalization?.status==="agreed"?"Consensus reached.":"Finalization completed with unresolved disagreement."});
+$("libraryBtn").addEventListener("click",async()=>{$("libraryOverlay").classList.remove("hidden");await loadLibrary()});$("closeLibraryBtn").addEventListener("click",()=>$("libraryOverlay").classList.add("hidden"));$("addFilesBtn").addEventListener("click",()=>$("fileInput").click());$("addFolderBtn").addEventListener("click",()=>$("folderInput").click());$("quickAddBtn").addEventListener("click",()=>$("fileInput").click());$("quickFolderBtn").addEventListener("click",()=>$("folderInput").click());$("fileInput").addEventListener("change",e=>uploadFiles(e.target.files));$("folderInput").addEventListener("change",e=>uploadFiles(e.target.files));$("refreshLibraryBtn").addEventListener("click",loadLibrary);
+$("newBtn").addEventListener("click",()=>{if(transcript.length&&!confirm("Start a new Think Tank conversation? Your Knowledge Library will be kept."))return;transcript=[];nextSpeaker="GPT";totalTokens=0;saveState();render();$("status").textContent="New conversation started. Knowledge Library preserved.";$("question").value="";window.scrollTo({top:0,behavior:"smooth"})});
+$("settingsBtn").addEventListener("click",()=>{if(confirm("Press OK to replace the relay secret. Press Cancel to keep it.")){$("secretInput").value="";$("setupOverlay").classList.remove("hidden")}});$("saveSecretBtn").addEventListener("click",async()=>{const value=$("secretInput").value.trim();if(!value)return;localStorage.setItem(STORAGE.secret,value);$("secretInput").value="";$("setupOverlay").classList.add("hidden");$("status").textContent="Relay secret saved on this device.";await loadLibrary()});$("question").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")$("sendBtn").click()});
+if(!getSecret())$("setupOverlay").classList.remove("hidden");render();if(getSecret())loadLibrary();
 </script>
 </body>
 </html>
