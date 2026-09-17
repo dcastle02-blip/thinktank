@@ -275,6 +275,68 @@
     setTimeout(updateLatestButton, smooth ? 450 : 20);
   }
 
+  async function runConsensusFinalization(event) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (busy) return;
+    const status = document.getElementById("status");
+    if (!Array.isArray(transcript) || !transcript.length) {
+      if (status) status.textContent = "Start a conversation first.";
+      return;
+    }
+    if (!confirm("Finalize this discussion? GPT and Claude will keep drafting, reviewing, and revising until they agree on a shared final output.")) return;
+
+    let finalizationState = null;
+    let steps = 0;
+    setBusy(true, "Starting consensus draft…");
+    try {
+      while (true) {
+        const data = await postJson(RELAY_URL, {
+          action: "finalize_step",
+          transcript,
+          nextSpeaker,
+          finalizationState,
+        });
+        totalTokens += Number(data?.usage?.roundTokens || 0);
+        const f = data?.finalization;
+        if (!f) throw new Error("Finalization returned no progress state.");
+
+        if (f.status === "agreed") {
+          transcript = Array.isArray(data.transcript) ? data.transcript : transcript;
+          nextSpeaker = data.nextSpeaker === "Claude" ? "Claude" : "GPT";
+          saveState();
+          render();
+          if (status) status.textContent = `Consensus reached after ${Number(f.cycle || 1)} review cycle(s).`;
+          requestAnimationFrame(() => goLatest(true));
+          break;
+        }
+
+        if (f.status === "unresolved") {
+          saveState();
+          if (status) status.textContent = `Consensus did not converge after the ${Number(f.maxCycles || 20)}-cycle emergency safety limit. No consensus output was added.`;
+          break;
+        }
+
+        finalizationState = f.state;
+        if (!finalizationState) throw new Error("Finalization progress state was missing.");
+        steps++;
+        if (steps > 45) throw new Error("Finalization exceeded the browser safety limit.");
+
+        const cycle = Number(f.cycle || 1);
+        if (status) {
+          if (f.phase === "drafted") status.textContent = `Draft complete. ${finalizationState.reviewer} is reviewing…`;
+          else if (f.phase === "needs_revision") status.textContent = `Review ${cycle}: changes requested. ${finalizationState.drafter} is revising…`;
+          else if (f.phase === "revised") status.textContent = `Revision ${cycle} complete. ${finalizationState.reviewer} is reviewing…`;
+          else status.textContent = `Finalizing… review cycle ${cycle}.`;
+        }
+      }
+    } catch (err) {
+      if (status) status.textContent = `Finalization error: ${String(err?.message || err)}`;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   latestBtn.addEventListener("click", () => goLatest(true));
   window.addEventListener("scroll", updateLatestButton, { passive: true });
   window.addEventListener("resize", updateLatestButton);
@@ -282,6 +344,9 @@
   if (composerTextarea) composerTextarea.addEventListener("input", positionLatestButton);
   const messages = document.getElementById("messages");
   if (messages) new MutationObserver(updateLatestButton).observe(messages, { childList: true, subtree: true });
+
+  const finalizeButton = document.getElementById("finalizeBtn");
+  if (finalizeButton) finalizeButton.addEventListener("click", runConsensusFinalization, true);
 
   savedBtn.addEventListener("click", async () => {
     overlay.classList.remove("hidden");
