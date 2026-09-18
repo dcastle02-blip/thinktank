@@ -24,7 +24,7 @@ returns table (
 language sql
 stable
 set search_path = public
-as $
+as $fn$
   select
     c.id,
     c.document_id,
