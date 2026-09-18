@@ -33,6 +33,7 @@ const TOOL_CAPABILITY: Record<string, { provider: Provider; capability: Capabili
   github_list_contents: { provider: "github", capability: "read" },
   github_create_file: { provider: "github", capability: "write" },
   github_update_file: { provider: "github", capability: "write" },
+  github_replace_text: { provider: "github", capability: "write" },
   github_delete_file: { provider: "github", capability: "destructive" },
   supabase_query_readonly: { provider: "supabase", capability: "read" },
   supabase_query: { provider: "supabase", capability: "write" },
@@ -58,6 +59,22 @@ function base64Utf8(value: string) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
+}
+
+function decodeBase64Utf8(value: string) {
+  const clean = String(value || "").replace(/\s+/g, "");
+  const binary = atob(clean);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function effectiveCapability(toolName: string, args: Record<string, unknown>, base: Capability): Capability {
+  if (toolName !== "supabase_query") return base;
+  const sql = String(args.query || "");
+  if (/\b(drop|truncate|delete|revoke)\b/i.test(sql) || /\balter\s+(table|schema|type|function|policy)\b/i.test(sql)) {
+    return "destructive";
+  }
+  return base;
 }
 
 function redactArguments(args: Record<string, unknown>) {
@@ -114,7 +131,11 @@ async function executeTool(toolName: string, args: Record<string, unknown>) {
     const branch = typeof args.branch === "string" && args.branch ? args.branch : undefined;
 
     if (toolName === "github_get_file") {
-      return await githubFetch(`/repos/${owner}/${name}/contents/${path}${branch ? `?ref=${encodeURIComponent(branch)}` : ""}`);
+      const file = await githubFetch(`/repos/${owner}/${name}/contents/${path}${branch ? `?ref=${encodeURIComponent(branch)}` : ""}`) as Record<string, unknown>;
+      if (file && file.type === "file" && file.encoding === "base64" && typeof file.content === "string") {
+        try { return { ...file, content: decodeBase64Utf8(file.content), encoding: "utf-8" }; } catch {}
+      }
+      return file;
     }
     if (toolName === "github_list_contents") {
       const suffix = path ? `/${path}` : "";
@@ -130,6 +151,30 @@ async function executeTool(toolName: string, args: Record<string, unknown>) {
         if (!sha) throw new Error("github_update_file requires the current blob sha.");
         payload.sha = sha;
       }
+      return await githubFetch(`/repos/${owner}/${name}/contents/${path}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    }
+    if (toolName === "github_replace_text") {
+      const oldText = String(args.old_text || "");
+      const newText = String(args.new_text || "");
+      if (!oldText) throw new Error("github_replace_text requires old_text.");
+      const file = await githubFetch(`/repos/${owner}/${name}/contents/${path}${branch ? `?ref=${encodeURIComponent(branch)}` : ""}`) as Record<string, unknown>;
+      if (file.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string" || typeof file.sha !== "string") {
+        throw new Error("github_replace_text can only patch UTF-8 text files.");
+      }
+      const current = decodeBase64Utf8(file.content);
+      const count = current.split(oldText).length - 1;
+      if (count !== 1) throw new Error(`old_text must match exactly once; found ${count} matches.`);
+      const updated = current.replace(oldText, newText);
+      const payload: Record<string, unknown> = {
+        message: String(args.message || "Patch file from Think Tank"),
+        content: base64Utf8(updated),
+        sha: file.sha,
+      };
+      if (branch) payload.branch = branch;
       return await githubFetch(`/repos/${owner}/${name}/contents/${path}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -286,14 +331,15 @@ Deno.serve(async (req) => {
       if (!definition) return json({ error: "unsupported tool" }, 400);
       const args = body.arguments && typeof body.arguments === "object" ? body.arguments as Record<string, unknown> : {};
       const requestedBy = safeRequestedBy(body.requestedBy);
-      const permission = await getPermission(definition.provider, definition.capability);
+      const capability = effectiveCapability(toolName, args, definition.capability);
+      const permission = await getPermission(definition.provider, capability);
       if (permission.mode === "disabled") return json({ error: `${toolName} is disabled` }, 403);
 
       const status = permission.mode === "approval" ? "awaiting_approval" : "requested";
       const { data: activity, error } = await supabase.from("thinktank_tool_activity").insert({
         provider: definition.provider,
         tool_name: toolName,
-        capability: definition.capability,
+        capability,
         requested_by: requestedBy,
         arguments: args,
         status,
