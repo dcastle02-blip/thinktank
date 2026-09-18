@@ -105,6 +105,7 @@
         }).join("")}
         <div class="provider-actions">
           <button class="btn small-btn" data-test-provider="${name}" ${connected ? "" : "disabled"}>Test Read</button>
+          ${name === "github" ? `<button class="btn small-btn" data-test-write="github" ${connected ? "" : "disabled"}>Test Write</button>` : ""}
         </div>
       </div>`;
   }
