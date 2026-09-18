@@ -105,7 +105,7 @@
         }).join("")}
         <div class="provider-actions">
           <button class="btn small-btn" data-test-provider="${name}" ${connected ? "" : "disabled"}>Test Read</button>
-          ${name === "github" ? `<button class="btn small-btn" data-test-write="github" ${connected ? "" : "disabled"}>Test Write</button>` : ""}
+          <button class="btn small-btn" data-test-write="${name}" ${connected ? "" : "disabled"}>Test Write</button>
         </div>
       </div>`;
   }
@@ -150,27 +150,39 @@
 
     document.querySelectorAll("[data-test-write]").forEach(btn => {
       btn.addEventListener("click", async () => {
-        setToolStatus("Creating a GitHub write request for approval…");
+        const provider = btn.dataset.testWrite;
+        setToolStatus(`Creating a ${provider} write request for approval…`);
         try {
-          const data = await toolsPost({
-            action: "execute",
-            toolName: "github_create_file",
-            requestedBy: "Dylan",
-            arguments: {
-              repo: "dcastle02-blip/thinktank",
-              path: "tool-broker-write-test.txt",
-              content: "Think Tank GitHub write test. Safe to delete after verification.\n",
-              message: "Test Think Tank GitHub write approval"
-            }
-          });
+          const payload = provider === "github"
+            ? {
+                action: "execute",
+                toolName: "github_create_file",
+                requestedBy: "Dylan",
+                arguments: {
+                  repo: "dcastle02-blip/thinktank",
+                  path: "tool-broker-write-test.txt",
+                  content: "Think Tank GitHub write test. Safe to delete after verification.\n",
+                  message: "Test Think Tank GitHub write approval"
+                }
+              }
+            : {
+                action: "execute",
+                toolName: "supabase_query",
+                requestedBy: "Dylan",
+                arguments: {
+                  query: "update public.thinktank_tool_permissions set updated_at = now() where provider = 'supabase' and capability = 'read' returning provider, capability, mode, updated_at;"
+                }
+              };
+
+          const data = await toolsPost(payload);
           if (data.status === "awaiting_approval") {
-            setToolStatus("Write test is awaiting your approval below.");
+            setToolStatus(`${provider} write test is awaiting your approval below.`);
           } else {
-            setToolStatus(`Write test status: ${data.status || "request created"}`);
+            setToolStatus(`${provider} write test status: ${data.status || "request created"}`);
           }
           await loadTools(false);
         } catch (err) {
-          setToolStatus(`GitHub write test failed: ${String(err?.message || err)}`);
+          setToolStatus(`${provider} write test failed: ${String(err?.message || err)}`);
         }
       });
     });
