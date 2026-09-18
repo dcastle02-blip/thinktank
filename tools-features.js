@@ -236,6 +236,10 @@
     try {
       const data = await toolsPost({ action: "approve", activityId: id });
       setToolStatus(data.status === "succeeded" ? "Approved action completed." : `Action status: ${data.status}`);
+      if (window.ThinkTankAgent?.resumeForActivity) {
+        const resumed = await window.ThinkTankAgent.resumeForActivity(id);
+        if (resumed?.resumed) setToolStatus("Approved action completed. Agent resumed automatically.");
+      }
     } catch (err) {
       setToolStatus(`Approved action failed: ${String(err?.message || err)}`);
     }
@@ -246,6 +250,10 @@
     try {
       await toolsPost({ action: "deny", activityId: id });
       setToolStatus("Action denied.");
+      if (window.ThinkTankAgent?.resumeForActivity) {
+        const resumed = await window.ThinkTankAgent.resumeForActivity(id);
+        if (resumed?.resumed) setToolStatus("Action denied. Agent resumed and can choose another path.");
+      }
     } catch (err) {
       setToolStatus(`Deny failed: ${String(err?.message || err)}`);
     }
