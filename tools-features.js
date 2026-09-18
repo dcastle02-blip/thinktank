@@ -148,6 +148,33 @@
       });
     });
 
+    document.querySelectorAll("[data-test-write]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        setToolStatus("Creating a GitHub write request for approval…");
+        try {
+          const data = await toolsPost({
+            action: "execute",
+            toolName: "github_create_file",
+            requestedBy: "Dylan",
+            arguments: {
+              repo: "dcastle02-blip/thinktank",
+              path: "tool-broker-write-test.txt",
+              content: "Think Tank GitHub write test. Safe to delete after verification.\n",
+              message: "Test Think Tank GitHub write approval"
+            }
+          });
+          if (data.status === "awaiting_approval") {
+            setToolStatus("Write test is awaiting your approval below.");
+          } else {
+            setToolStatus(`Write test status: ${data.status || "request created"}`);
+          }
+          await loadTools(false);
+        } catch (err) {
+          setToolStatus(`GitHub write test failed: ${String(err?.message || err)}`);
+        }
+      });
+    });
+
     const activity = toolState?.activity || [];
     const list = document.getElementById("toolActivity");
     if (!list) return;
