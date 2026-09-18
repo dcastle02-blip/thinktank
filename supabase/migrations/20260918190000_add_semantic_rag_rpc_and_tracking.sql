@@ -38,7 +38,7 @@ as $fn$
   where c.embedding is not null
     and d.status = 'ready'
   order by c.embedding <=> query_embedding
-  limit greatest(1, least(match_count, 12));
-$;
+  limit greatest(1, least(coalesce(match_count, 12), 12));
+$fn$;
 
 commit;
