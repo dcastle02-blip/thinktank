@@ -1,0 +1,336 @@
+import { createClient } from "npm:@supabase/supabase-js@2.95.0";
+
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
+const RELAY_SECRET = Deno.env.get("RELAY_SECRET")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const secretKeysRaw = Deno.env.get("SUPABASE_SECRET_KEYS");
+const ADMIN_KEY = secretKeysRaw ? JSON.parse(secretKeysRaw)["default"] : Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const TOOLS_URL = `${SUPABASE_URL}/functions/v1/tools`;
+const GPT_MODEL = "gpt-5.2";
+const ALLOWED_ORIGIN = "https://dcastle02-blip.github.io";
+const MAX_ACTIONS_PER_RUN = 4;
+const MAX_TOOL_RESULT_CHARS = 12000;
+
+const supabase = createClient(SUPABASE_URL, ADMIN_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+  "Access-Control-Allow-Headers": "content-type, x-relay-secret",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Max-Age": "86400",
+  "Vary": "Origin",
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
+}
+
+const BROKER_TOOLS = [
+  { name:"github_get_file", description:"Read a UTF-8 file from dcastle02-blip/thinktank.", parameters:{type:"object",properties:{path:{type:"string"},branch:{type:"string"}},required:["path"],additionalProperties:false}},
+  { name:"github_list_contents", description:"List a directory in dcastle02-blip/thinktank.", parameters:{type:"object",properties:{path:{type:"string"},branch:{type:"string"}},additionalProperties:false}},
+  { name:"github_create_file", description:"Create a UTF-8 file in dcastle02-blip/thinktank. May require Dylan approval.", parameters:{type:"object",properties:{path:{type:"string"},content:{type:"string"},message:{type:"string"},branch:{type:"string"}},required:["path","content","message"],additionalProperties:false}},
+  { name:"github_update_file", description:"Replace an existing UTF-8 file. Requires current sha. May require approval.", parameters:{type:"object",properties:{path:{type:"string"},content:{type:"string"},message:{type:"string"},sha:{type:"string"},branch:{type:"string"}},required:["path","content","message","sha"],additionalProperties:false}},
+  { name:"github_replace_text", description:"Patch one exact text segment in an existing UTF-8 file. Prefer for focused edits. May require approval.", parameters:{type:"object",properties:{path:{type:"string"},old_text:{type:"string"},new_text:{type:"string"},message:{type:"string"},branch:{type:"string"}},required:["path","old_text","new_text","message"],additionalProperties:false}},
+  { name:"github_delete_file", description:"Delete a GitHub file. Destructive permission applies.", parameters:{type:"object",properties:{path:{type:"string"},sha:{type:"string"},message:{type:"string"},branch:{type:"string"}},required:["path","sha","message"],additionalProperties:false}},
+  { name:"supabase_query_readonly", description:"Run read-only SQL against the live Think Tank Supabase project.", parameters:{type:"object",properties:{query:{type:"string"}},required:["query"],additionalProperties:false}},
+  { name:"supabase_query", description:"Run SQL that changes the live Think Tank Supabase project. Broker permissions apply.", parameters:{type:"object",properties:{query:{type:"string"}},required:["query"],additionalProperties:false}},
+  { name:"supabase_list_functions", description:"List deployed Edge Functions.", parameters:{type:"object",properties:{},additionalProperties:false}},
+  { name:"supabase_get_function", description:"Read one deployed Edge Function.", parameters:{type:"object",properties:{slug:{type:"string"}},required:["slug"],additionalProperties:false}},
+  { name:"supabase_deploy_function", description:"Deploy or update an Edge Function. Broker permissions apply.", parameters:{type:"object",properties:{slug:{type:"string"},source:{type:"string"},verifyJwt:{type:"boolean"}},required:["slug","source"],additionalProperties:false}},
+  { name:"supabase_delete_function", description:"Delete a deployed Edge Function. Destructive permission applies.", parameters:{type:"object",properties:{slug:{type:"string"}},required:["slug"],additionalProperties:false}},
+];
+
+const LOCAL_TOOLS = [
+  {
+    name:"agent_checkpoint",
+    description:"Persist concise working state after meaningful progress, then continue if more work remains.",
+    parameters:{type:"object",properties:{
+      summary:{type:"string"},
+      next_step:{type:"string"},
+      plan:{type:"array",items:{type:"string"}},
+      verified:{type:"array",items:{type:"string"}}
+    },required:["summary","next_step"],additionalProperties:false}
+  },
+  {
+    name:"agent_complete",
+    description:"Mark the task complete only after the requested outcome has been verified.",
+    parameters:{type:"object",properties:{
+      result:{type:"string"},
+      verification:{type:"array",items:{type:"string"}}
+    },required:["result","verification"],additionalProperties:false}
+  }
+];
+
+const OPENAI_TOOLS = [...BROKER_TOOLS, ...LOCAL_TOOLS].map(t => ({type:"function",function:t}));
+
+function compact(value: unknown, max = MAX_TOOL_RESULT_CHARS) {
+  let s = "";
+  try { s = JSON.stringify(value); } catch { s = String(value); }
+  return s.length > max ? s.slice(0, max) + "\n[truncated]" : s;
+}
+
+async function broker(toolName: string, args: Record<string, unknown>) {
+  const res = await fetch(TOOLS_URL, {
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-relay-secret":RELAY_SECRET},
+    body:JSON.stringify({action:"execute",toolName,requestedBy:"GPT",arguments:args}),
+  });
+  const raw = await res.text();
+  let data: any = raw;
+  try { data = raw ? JSON.parse(raw) : {}; } catch {}
+  if (!res.ok) throw new Error(typeof data === "object" && data?.error ? String(data.error) : `Tool broker HTTP ${res.status}: ${raw.slice(0,1000)}`);
+  return data;
+}
+
+async function loadTask(id: string) {
+  const { data, error } = await supabase.from("thinktank_agent_tasks").select("*").eq("id", id).single();
+  if (error) throw error;
+  return data;
+}
+
+async function recentSteps(taskId: string, limit = 12) {
+  const { data, error } = await supabase.from("thinktank_agent_steps").select("*").eq("task_id", taskId).order("sequence", {ascending:false}).limit(limit);
+  if (error) throw error;
+  return (data ?? []).reverse();
+}
+
+async function recordStep(task: any, actor: "GPT"|"System", kind: string, status: string, summary: string, detail: Record<string,unknown> = {}) {
+  const sequence = Number(task.step_count || 0) + 1;
+  const { error } = await supabase.from("thinktank_agent_steps").insert({
+    task_id:task.id, sequence, actor, kind, status, summary:summary.slice(0,12000), detail
+  });
+  if (error) throw error;
+  const now = new Date().toISOString();
+  const { data, error: updateError } = await supabase.from("thinktank_agent_tasks")
+    .update({step_count:sequence,updated_at:now,started_at:task.started_at || now})
+    .eq("id",task.id).select().single();
+  if (updateError) throw updateError;
+  Object.assign(task, data);
+}
+
+function taskContext(task: any, steps: any[]) {
+  const history = steps.map(s => `#${s.sequence} ${s.actor}/${s.kind}/${s.status}: ${s.summary}\n${compact(s.detail,3000)}`).join("\n\n");
+  return `TASK GOAL
+${task.goal}
+
+CURRENT STATUS
+${task.status}
+
+PERSISTED WORKING STATE
+${compact(task.working_state || {},6000)}
+
+RECENT STEPS
+${history || "(none)"}
+
+Operate as Dylan's supervised software agent. Work toward the task outcome, not toward producing conversation.
+Use live tools whenever current GitHub or Supabase state matters. Inspect before modifying. Prefer focused edits. Never claim a write succeeded until a later read verifies it.
+Writes/destructive actions may return awaiting_approval. If that happens, stop immediately; do not duplicate the request. The task engine will resume after approval.
+Do not ask Dylan to run commands when a connected tool can do the work.
+Keep context compact. Use agent_checkpoint after meaningful progress. Use agent_complete only when the requested outcome is actually verified live.
+If a tool fails, diagnose and try a materially different next step when appropriate.
+You have a finite step budget of ${task.max_steps}; current persisted step count is ${task.step_count}.`;
+}
+
+async function callGPT(messages: any[]) {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method:"POST",
+    headers:{"Authorization":`Bearer ${OPENAI_API_KEY}`,"Content-Type":"application/json"},
+    body:JSON.stringify({
+      model:GPT_MODEL,
+      max_completion_tokens:1800,
+      messages,
+      tools:OPENAI_TOOLS,
+      tool_choice:"auto",
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+async function refreshWaitingTask(task: any) {
+  if (task.status !== "waiting_approval" || !task.pending_activity_id) return task;
+  const { data: activity, error } = await supabase.from("thinktank_tool_activity")
+    .select("id,tool_name,status,result_summary,error_text,completed_at")
+    .eq("id",task.pending_activity_id).single();
+  if (error) throw error;
+  if (activity.status === "awaiting_approval" || activity.status === "approved" || activity.status === "running") return task;
+
+  const outcome = activity.status === "succeeded" ? "succeeded" : activity.status === "denied" ? "denied" : "failed";
+  await recordStep(task,"System","tool",outcome,
+    `Approval result for ${activity.tool_name}: ${activity.status}`,
+    {activityId:activity.id,result:activity.result_summary,error:activity.error_text});
+  const state = {...(task.working_state || {}), last_approval_result:{activityId:activity.id,tool:activity.tool_name,status:activity.status,result:activity.result_summary,error:activity.error_text}};
+  const { data, error: uErr } = await supabase.from("thinktank_agent_tasks").update({
+    status:"running", pending_activity_id:null, working_state:state, updated_at:new Date().toISOString()
+  }).eq("id",task.id).select().single();
+  if (uErr) throw uErr;
+  return data;
+}
+
+async function runTask(taskId: string) {
+  let task = await loadTask(taskId);
+  if (["completed","failed","cancelled"].includes(task.status)) return task;
+  task = await refreshWaitingTask(task);
+  if (task.status === "waiting_approval") return task;
+
+  if (Number(task.step_count) >= Number(task.max_steps)) {
+    const message = `Step budget reached (${task.step_count}/${task.max_steps}). Increase the budget or start a follow-up task.`;
+    const { data } = await supabase.from("thinktank_agent_tasks").update({status:"failed",error_text:message,updated_at:new Date().toISOString(),completed_at:new Date().toISOString()}).eq("id",task.id).select().single();
+    return data;
+  }
+
+  const { data: started, error: startErr } = await supabase.from("thinktank_agent_tasks").update({
+    status:"running", updated_at:new Date().toISOString(), started_at:task.started_at || new Date().toISOString(), error_text:null
+  }).eq("id",task.id).select().single();
+  if (startErr) throw startErr;
+  task = started;
+
+  const steps = await recentSteps(task.id);
+  const messages:any[] = [
+    {role:"system",content:"You are the execution engine for Dylan's Think Tank Agent. Take concrete actions through the provided tools. Human approval boundaries are enforced by the Tool Broker."},
+    {role:"user",content:taskContext(task,steps)}
+  ];
+
+  for (let action = 0; action < MAX_ACTIONS_PER_RUN; action++) {
+    if (Number(task.step_count) >= Number(task.max_steps)) break;
+    const data = await callGPT(messages);
+    const message = data.choices?.[0]?.message ?? {};
+    const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+
+    if (!calls.length) {
+      const text = String(message.content || "").trim() || "No tool action selected.";
+      const state = {...(task.working_state || {}), summary:text, next_step:"Continue task"};
+      await recordStep(task,"GPT","checkpoint","succeeded",text,{});
+      const { data: queued, error } = await supabase.from("thinktank_agent_tasks").update({status:"queued",working_state:state,updated_at:new Date().toISOString()}).eq("id",task.id).select().single();
+      if (error) throw error;
+      return queued;
+    }
+
+    messages.push(message);
+    for (const call of calls) {
+      const name = String(call?.function?.name || "");
+      let args:any = {};
+      try { args = JSON.parse(String(call?.function?.arguments || "{}")); } catch {}
+
+      if (name === "agent_checkpoint") {
+        const state = {
+          ...(task.working_state || {}),
+          summary:String(args.summary || ""),
+          next_step:String(args.next_step || ""),
+          plan:Array.isArray(args.plan) ? args.plan : task.working_state?.plan || [],
+          verified:Array.isArray(args.verified) ? args.verified : task.working_state?.verified || [],
+        };
+        await recordStep(task,"GPT","checkpoint","succeeded",state.summary,{next_step:state.next_step,plan:state.plan,verified:state.verified});
+        const { data: updated, error } = await supabase.from("thinktank_agent_tasks").update({working_state:state,updated_at:new Date().toISOString()}).eq("id",task.id).select().single();
+        if (error) throw error;
+        task = updated;
+        messages.push({role:"tool",tool_call_id:call.id,content:JSON.stringify({status:"saved"})});
+        continue;
+      }
+
+      if (name === "agent_complete") {
+        const result = String(args.result || "").trim();
+        const verification = Array.isArray(args.verification) ? args.verification : [];
+        await recordStep(task,"GPT","checkpoint","succeeded",`Completed: ${result}`,{verification});
+        const { data: completed, error } = await supabase.from("thinktank_agent_tasks").update({
+          status:"completed",result,working_state:{...(task.working_state || {}),verification},updated_at:new Date().toISOString(),completed_at:new Date().toISOString()
+        }).eq("id",task.id).select().single();
+        if (error) throw error;
+        return completed;
+      }
+
+      let toolResult:any;
+      try {
+        toolResult = await broker(name,args);
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await recordStep(task,"GPT","tool","failed",`${name} failed`,{arguments:args,error});
+        messages.push({role:"tool",tool_call_id:call.id,content:JSON.stringify({status:"failed",error})});
+        continue;
+      }
+
+      if (toolResult?.status === "awaiting_approval") {
+        await recordStep(task,"GPT","tool","waiting",`${name} is awaiting Dylan approval`,{arguments:args,activityId:toolResult.activityId});
+        const state = {...(task.working_state || {}), pending_tool:{name,activityId:toolResult.activityId}};
+        const { data: waiting, error } = await supabase.from("thinktank_agent_tasks").update({
+          status:"waiting_approval",pending_activity_id:toolResult.activityId,working_state:state,updated_at:new Date().toISOString()
+        }).eq("id",task.id).select().single();
+        if (error) throw error;
+        return waiting;
+      }
+
+      const status = toolResult?.status === "succeeded" ? "succeeded" : "failed";
+      await recordStep(task,"GPT","tool",status,`${name}: ${toolResult?.status || "completed"}`,{arguments:args,result:compact(toolResult,8000)});
+      task = await loadTask(task.id);
+      messages.push({role:"tool",tool_call_id:call.id,content:compact(toolResult)});
+    }
+  }
+
+  const { data: queued, error } = await supabase.from("thinktank_agent_tasks").update({status:"queued",updated_at:new Date().toISOString()}).eq("id",task.id).select().single();
+  if (error) throw error;
+  return queued;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null,{status:204,headers:CORS_HEADERS});
+  if (req.method !== "POST") return json({error:"POST only"},405);
+  if (req.headers.get("x-relay-secret") !== RELAY_SECRET) return json({error:"unauthorized"},401);
+
+  try {
+    const body = await req.json();
+    const action = String(body.action || "list");
+
+    if (action === "list") {
+      const { data, error } = await supabase.from("thinktank_agent_tasks")
+        .select("id,title,goal,status,max_steps,step_count,working_state,pending_activity_id,result,error_text,created_at,updated_at,completed_at")
+        .order("updated_at",{ascending:false}).limit(50);
+      if (error) throw error;
+      return json({tasks:data ?? []});
+    }
+
+    if (action === "get") {
+      const task = await loadTask(String(body.taskId || ""));
+      const steps = await recentSteps(task.id,50);
+      return json({task,steps});
+    }
+
+    if (action === "create") {
+      const goal = String(body.goal || "").trim();
+      if (!goal) return json({error:"goal is required"},400);
+      const title = String(body.title || goal.slice(0,80)).trim().slice(0,120);
+      const maxSteps = Math.max(1,Math.min(100,Number(body.maxSteps || 30)));
+      const { data:task, error } = await supabase.from("thinktank_agent_tasks").insert({title,goal,max_steps:maxSteps,status:"queued"}).select().single();
+      if (error) throw error;
+      await recordStep(task,"System","system","succeeded","Task created",{goal});
+      const finalTask = body.autoRun === false ? await loadTask(task.id) : await runTask(task.id);
+      return json({task:finalTask});
+    }
+
+    if (action === "run" || action === "resume") {
+      const task = await runTask(String(body.taskId || ""));
+      return json({task});
+    }
+
+    if (action === "resume_activity") {
+      const activityId = String(body.activityId || "");
+      const { data:task, error } = await supabase.from("thinktank_agent_tasks")
+        .select("*").eq("pending_activity_id",activityId).eq("status","waiting_approval").maybeSingle();
+      if (error) throw error;
+      if (!task) return json({resumed:false});
+      const resumed = await runTask(task.id);
+      return json({resumed:true,task:resumed});
+    }
+
+    if (action === "cancel") {
+      const id = String(body.taskId || "");
+      const { data, error } = await supabase.from("thinktank_agent_tasks").update({
+        status:"cancelled",updated_at:new Date().toISOString(),completed_at:new Date().toISOString()
+      }).eq("id",id).select().single();
+      if (error) throw error;
+      return json({task:data});
+    }
+
+    return json({error:`unsupported action: ${action}`},400);
+  } catch (err) {
+    return json({error:err instanceof Error ? err.message : String(err)},500);
+  }
+});
