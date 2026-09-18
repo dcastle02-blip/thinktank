@@ -23,7 +23,8 @@ returns table (
 )
 language sql
 stable
-as $$
+set search_path = public
+as $
   select
     c.id,
     c.document_id,
@@ -32,9 +33,12 @@ as $$
     c.content,
     (1 - (c.embedding <=> query_embedding))::float as similarity
   from public.thinktank_document_chunks c
+  join public.thinktank_documents d
+    on d.id = c.document_id
   where c.embedding is not null
+    and d.status = 'ready'
   order by c.embedding <=> query_embedding
-  limit match_count;
-$$;
+  limit greatest(1, least(match_count, 12));
+$;
 
 commit;
