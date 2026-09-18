@@ -252,7 +252,13 @@ async function callClaude(transcript: Turn[], instruction = "", maxTokens = MAX_
       headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
       body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, thinking: { type: "disabled" }, output_config: { effort: "high" }, system, messages, ...(allowTools ? { tools: defs } : {}) }),
     });
-    if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
+    if (!res.ok) {
+      const raw = await res.text();
+      if (res.status === 400 && /specified API usage limits|regain access/i.test(raw)) {
+        throw new Error(`CLAUDE_UNAVAILABLE: ${raw}`);
+      }
+      throw new Error(`Anthropic ${res.status}: ${raw}`);
+    }
     const data = await res.json();
     const usage = data.usage ?? {};
     tokens += Number(usage.input_tokens ?? 0) + Number(usage.output_tokens ?? 0);
@@ -286,6 +292,12 @@ async function callModel(speaker: AiSpeaker, transcript: Turn[], instruction = "
     ? callGPT(transcript, instruction, maxTokens, knowledgeContext, toolMode)
     : callClaude(transcript, instruction, maxTokens, knowledgeContext, toolMode);
 }
+
+function isClaudeUnavailableError(err: unknown) {
+  return err instanceof Error && err.message.startsWith("CLAUDE_UNAVAILABLE:");
+}
+
+const CLAUDE_FALLBACK_NOTICE = "Claude API usage limit reached. Think Tank continued with GPT only; Claude will automatically rejoin when the Anthropic API is available again.";
 
 function normalizeTranscript(value: unknown): Turn[] {
   if (!Array.isArray(value)) return [];
@@ -403,30 +415,77 @@ Deno.serve(async (req) => {
       const working: Turn[] = [...transcript, { speaker: "Dylan", text: message || "Please review the attached file(s).", attachments: attachments.length ? attachments : undefined }];
       const knowledge = await getKnowledgeContext(recentSearchBasis(working, message));
       let gptTokens = 0, claudeTokens = 0, speaker = requestedSpeaker;
+      let providerNotice = "";
       for (let i = 0; i < 2; i++) {
-        const result = await callModel(speaker, working, "", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
-        working.push({ speaker, text: result.text });
-        if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
-        speaker = otherSpeaker(speaker);
+        try {
+          const result = await callModel(speaker, working, "", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
+          working.push({ speaker, text: result.text });
+          if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
+          speaker = otherSpeaker(speaker);
+        } catch (err) {
+          if (speaker !== "Claude" || !isClaudeUnavailableError(err)) throw err;
+          providerNotice = CLAUDE_FALLBACK_NOTICE;
+          const alreadyHasFreshGpt = working.length > 0 && working[working.length - 1]?.speaker === "GPT";
+          if (!alreadyHasFreshGpt) {
+            const fallback = await callGPT(working, "Claude is temporarily unavailable because its API usage limit was reached. Make the single most useful contribution yourself; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
+            working.push({ speaker: "GPT", text: fallback.text });
+            gptTokens += fallback.tokens;
+          }
+          speaker = "GPT";
+          break;
+        }
       }
-      return json({ transcript: working, nextSpeaker: speaker, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }, usage: { gptTokens, claudeTokens, roundTokens: gptTokens + claudeTokens } });
+      return json({ transcript: working, nextSpeaker: speaker, providerNotice, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }, usage: { gptTokens, claudeTokens, roundTokens: gptTokens + claudeTokens } });
     }
 
     if (action === "next") {
       if (!transcript.length) return json({ error: "start a conversation before requesting the next response" }, 400);
       const knowledge = await getKnowledgeContext(recentSearchBasis(transcript));
-      const result = await callModel(requestedSpeaker, transcript, "Continue the discussion from the exact point it currently stands. Do not pretend Dylan spoke again. Make the most useful next contribution. You may extend a sound idea, add missing analysis, correct a material issue, reframe the problem, or briefly confirm something that is already right. Do not manufacture disagreement or repeat points that are already settled.", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
-      const working = [...transcript, { speaker: requestedSpeaker, text: result.text } as Turn];
-      const gptTokens = requestedSpeaker === "GPT" ? result.tokens : 0;
-      const claudeTokens = requestedSpeaker === "Claude" ? result.tokens : 0;
-      return json({ transcript: working, nextSpeaker: otherSpeaker(requestedSpeaker), knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }, usage: { gptTokens, claudeTokens, roundTokens: result.tokens } });
+      const instruction = "Continue the discussion from the exact point it currently stands. Do not pretend Dylan spoke again. Make the most useful next contribution. You may extend a sound idea, add missing analysis, correct a material issue, reframe the problem, or briefly confirm something that is already right. Do not manufacture disagreement or repeat points that are already settled.";
+      let actualSpeaker = requestedSpeaker;
+      let providerNotice = "";
+      let result;
+      try {
+        result = await callModel(requestedSpeaker, transcript, instruction, MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
+      } catch (err) {
+        if (requestedSpeaker !== "Claude" || !isClaudeUnavailableError(err)) throw err;
+        providerNotice = CLAUDE_FALLBACK_NOTICE;
+        actualSpeaker = "GPT";
+        result = await callGPT(transcript, instruction + "\n\nClaude is temporarily unavailable due to its API usage limit. Continue as GPT only; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
+      }
+      const working = [...transcript, { speaker: actualSpeaker, text: result.text } as Turn];
+      const gptTokens = actualSpeaker === "GPT" ? result.tokens : 0;
+      const claudeTokens = actualSpeaker === "Claude" ? result.tokens : 0;
+      return json({ transcript: working, nextSpeaker: providerNotice ? "GPT" : otherSpeaker(actualSpeaker), providerNotice, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }, usage: { gptTokens, claudeTokens, roundTokens: result.tokens } });
     }
 
     if (action === "finalize_step" || action === "finalize") {
       if (!transcript.length) return json({ error: "start a conversation before finalizing" }, 400);
       const knowledge = await getKnowledgeContext(recentSearchBasis(transcript));
-      const result = await finalizeStep(transcript, requestedSpeaker, body.finalizationState, knowledge.context);
-      return json({ ...result, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] } });
+      try {
+        const result = await finalizeStep(transcript, requestedSpeaker, body.finalizationState, knowledge.context);
+        return json({ ...result, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] } });
+      } catch (err) {
+        if (!isClaudeUnavailableError(err)) throw err;
+        const state = normalizeFinalizationState(body.finalizationState);
+        let finalText = "";
+        let gptTokens = 0;
+        if (state?.stage === "review" && state.drafter === "GPT" && state.proposed.trim()) {
+          finalText = state.proposed;
+        } else {
+          const fallback = await callGPT(transcript, draftInstruction + "\n\nClaude is temporarily unavailable due to its API usage limit. Produce the strongest final output yourself. Do not claim cross-model consensus or Claude review.", MAX_FINAL_OUTPUT_TOKENS, knowledge.context, "read_only");
+          finalText = fallback.text;
+          gptTokens = fallback.tokens;
+        }
+        return json({
+          transcript: [...transcript, { speaker: "Consensus", text: finalText } as Turn],
+          nextSpeaker: "GPT",
+          providerNotice: CLAUDE_FALLBACK_NOTICE,
+          finalization: { status: "agreed", mode: "gpt_only", reason: "claude_unavailable", cycle: state?.cycle ?? 0, maxCycles: MAX_FINAL_REVIEW_CYCLES },
+          usage: { gptTokens, claudeTokens: 0, roundTokens: gptTokens },
+          knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }
+        });
+      }
     }
 
     return json({ error: `unsupported action: ${action}` }, 400);
