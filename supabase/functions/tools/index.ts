@@ -9,6 +9,7 @@ const SUPABASE_ACCESS_TOKEN = Deno.env.get("THINKTANK_SUPABASE_ACCESS_TOKEN") ||
 const PROJECT_REF = "ddxhpsgwxqoejghmsatg";
 const DEFAULT_REPO = "dcastle02-blip/thinktank";
 const ALLOWED_ORIGIN = "https://dcastle02-blip.github.io";
+const AGENT_URL = `${SUPABASE_URL}/functions/v1/agent`;
 
 const supabase = createClient(SUPABASE_URL, ADMIN_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
@@ -283,6 +284,23 @@ async function runActivity(activity: any) {
   }
 }
 
+async function resumeAgentForActivity(activityId: string) {
+  try {
+    const res = await fetch(AGENT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-relay-secret": RELAY_SECRET },
+      body: JSON.stringify({ action: "resume_activity", activityId }),
+    });
+    const raw = await res.text();
+    let data: unknown = raw;
+    try { data = raw ? JSON.parse(raw) : {}; } catch {}
+    if (!res.ok) return { resumed: false, error: `agent HTTP ${res.status}: ${raw.slice(0, 1000)}` };
+    return data;
+  } catch (err) {
+    return { resumed: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -359,7 +377,9 @@ Deno.serve(async (req) => {
       if (error) throw error;
       if (activity.status !== "awaiting_approval") return json({ error: "activity is not awaiting approval" }, 409);
       await supabase.from("thinktank_tool_activity").update({ status: "approved", approved_at: new Date().toISOString() }).eq("id", id);
-      return json(await runActivity({ ...activity, status: "approved" }));
+      const result = await runActivity({ ...activity, status: "approved" });
+      const agentResume = await resumeAgentForActivity(id);
+      return json({ ...result, agentResume });
     }
 
     if (action === "deny") {
@@ -369,7 +389,8 @@ Deno.serve(async (req) => {
         .eq("id", id).eq("status", "awaiting_approval").select("id,status").maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: "activity is not awaiting approval" }, 409);
-      return json({ activity: data });
+      const agentResume = await resumeAgentForActivity(id);
+      return json({ activity: data, agentResume });
     }
 
     return json({ error: `unsupported action: ${action}` }, 400);
