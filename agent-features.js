@@ -77,7 +77,9 @@
     }
 
     wrap.innerHTML = agentTasks.map(task => {
-      const budgetFailed = task.status === "failed" && String(task.error_text || "").startsWith("Step budget reached");\n      const terminal = ["completed","cancelled"].includes(task.status) || (task.status === "failed" && !budgetFailed);\n      const atBudget = budgetFailed || Number(task.step_count) >= Number(task.max_steps);
+      const budgetFailed = task.status === "failed" && String(task.error_text || "").startsWith("Step budget reached");
+      const terminal = ["completed","cancelled"].includes(task.status) || (task.status === "failed" && !budgetFailed);
+      const atBudget = budgetFailed || Number(task.step_count) >= Number(task.max_steps);
       return `
         <div class="agent-task">
           <div class="agent-task-top">
@@ -90,7 +92,8 @@
           <div class="agent-summary">${escapeHtml(taskSummary(task))}</div>
           ${task.status === "waiting_approval" ? '<div class="agent-summary">Waiting for a tool approval. Open Tools to review the exact action.</div>' : ""}
           <div class="agent-actions">
-            ${!terminal && task.status !== "waiting_approval" && !atBudget ? `<button class="btn primary small-btn" data-agent-continue="${escapeHtml(task.id)}">Continue</button>` : ""}\n            ${!terminal && atBudget ? `<button class="btn primary small-btn" data-agent-extend="${escapeHtml(task.id)}">Add 30 steps & Continue</button>` : ""}
+            ${!terminal && task.status !== "waiting_approval" && !atBudget ? `<button class="btn primary small-btn" data-agent-continue="${escapeHtml(task.id)}">Continue</button>` : ""}
+            ${!terminal && atBudget ? `<button class="btn primary small-btn" data-agent-extend="${escapeHtml(task.id)}">Add 30 steps & Continue</button>` : ""}
             ${task.status === "waiting_approval" ? '<button class="btn small-btn" data-open-tools="1">Open Tools</button>' : ""}
             ${!terminal ? `<button class="btn danger small-btn" data-agent-cancel="${escapeHtml(task.id)}">Cancel</button>` : ""}
             <button class="btn small-btn" data-agent-details="${escapeHtml(task.id)}">Details</button>
@@ -98,7 +101,8 @@
         </div>`;
     }).join("");
 
-    wrap.querySelectorAll("[data-agent-continue]").forEach(btn => btn.addEventListener("click", () => driveTask(btn.dataset.agentContinue, 4)));\n    wrap.querySelectorAll("[data-agent-extend]").forEach(btn => btn.addEventListener("click", () => extendAndContinue(btn.dataset.agentExtend)));
+    wrap.querySelectorAll("[data-agent-continue]").forEach(btn => btn.addEventListener("click", () => driveTask(btn.dataset.agentContinue, 4)));
+    wrap.querySelectorAll("[data-agent-extend]").forEach(btn => btn.addEventListener("click", () => extendAndContinue(btn.dataset.agentExtend)));
     wrap.querySelectorAll("[data-agent-cancel]").forEach(btn => btn.addEventListener("click", () => cancelTask(btn.dataset.agentCancel)));
     wrap.querySelectorAll("[data-agent-details]").forEach(btn => btn.addEventListener("click", () => showDetails(btn.dataset.agentDetails)));
     wrap.querySelectorAll("[data-open-tools]").forEach(btn => btn.addEventListener("click", () => {
