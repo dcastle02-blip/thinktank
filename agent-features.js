@@ -50,6 +50,12 @@
     .cortex-meta{font-size:11px;color:var(--muted);line-height:1.4;margin-top:7px}
     .agent-feed{flex:1;overflow:auto;padding:16px 14px 28px}
     .agent-feed .card{box-shadow:none}
+    .agent-answer-wrap{border:1px solid #665494;border-radius:16px;background:var(--panel);padding:13px;margin-bottom:16px}
+    .agent-answer-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+    .agent-answer-title{font-size:12px;font-weight:800;letter-spacing:.06em}
+    .agent-answer-box{width:100%;min-height:220px;max-height:48vh;resize:vertical;border:1px solid var(--border);border-radius:12px;background:var(--bg);color:var(--text);padding:12px 13px;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:13px;line-height:1.45;white-space:pre;overflow:auto}
+    .agent-answer-note{font-size:11px;color:var(--muted);margin-top:7px}
+    .agent-activity-title{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--muted);margin:18px 2px 10px}
     .agent-tool-card,.agent-system-card{border:1px solid var(--border);border-radius:14px;background:var(--panel);margin-bottom:13px;overflow:hidden}
     .agent-tool-head,.agent-system-head{padding:8px 12px;font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--muted);background:var(--panel2)}
     .agent-tool-head.succeeded{color:#bff5d6}
@@ -231,15 +237,58 @@
       </section>`;
   }
 
+  function bestAgentAnswer(task, steps) {
+    if (String(task?.result || "").trim()) return String(task.result).trim();
+    if (String(task?.working_state?.summary || "").trim()) return String(task.working_state.summary).trim();
+
+    const candidates = [...(steps || [])].reverse();
+    for (const step of candidates) {
+      if (!["checkpoint","model"].includes(step?.kind)) continue;
+      const text = String(step?.summary || "").trim();
+      if (!text || text === "Task created") continue;
+      return text;
+    }
+    return "";
+  }
+
+  async function copyAgentAnswer() {
+    const box = document.getElementById("agentAnswerBox");
+    if (!box) return;
+    const text = box.value || "";
+    try {
+      await navigator.clipboard.writeText(text);
+      setAgentStatus("Answer copied.");
+    } catch {
+      box.focus();
+      box.select();
+      document.execCommand("copy");
+      setAgentStatus("Answer copied.");
+    }
+  }
+
   function renderTaskChat(scrollToBottom = false) {
     const feed = document.getElementById("agentFeed");
     const primary = document.getElementById("agentPrimaryActions");
     const secondary = document.getElementById("agentSecondaryActions");
     if (!feed || !activeTask) return;
 
+    const answer = bestAgentAnswer(activeTask, activeSteps);
     const pieces = [
       `<section class="card speaker-Dylan"><div class="card-head">DYLAN · AGENT GOAL</div><div class="card-body">${escapeHtml(activeTask.goal || "")}</div></section>`
     ];
+
+    if (answer) {
+      pieces.push(`
+        <section class="agent-answer-wrap">
+          <div class="agent-answer-head">
+            <div class="agent-answer-title">AGENT ANSWER</div>
+            <button class="btn primary small-btn" data-copy-agent-answer="1">Copy Answer</button>
+          </div>
+          <textarea id="agentAnswerBox" class="agent-answer-box" readonly spellcheck="false">${escapeHtml(answer)}</textarea>
+          <div class="agent-answer-note">One complete copy/paste box. Tool activity stays separate below.</div>
+        </section>
+        <div class="agent-activity-title">AGENT ACTIVITY</div>`);
+    }
 
     for (const step of activeSteps) pieces.push(stepCard(step));
 
@@ -285,6 +334,7 @@
       ? '<button class="btn danger" data-chat-cancel="1">Cancel Task</button><button class="btn" data-agent-back="1">Task List</button>'
       : '<button class="btn" data-agent-back="1">Task List</button>';
 
+    feed.querySelectorAll("[data-copy-agent-answer]").forEach(btn => btn.addEventListener("click", copyAgentAnswer));
     feed.querySelectorAll("[data-chat-open-tools]").forEach(btn => btn.addEventListener("click", openToolsFromAgent));
     primary.querySelectorAll("[data-chat-open-tools]").forEach(btn => btn.addEventListener("click", openToolsFromAgent));
     primary.querySelectorAll("[data-chat-refresh]").forEach(btn => btn.addEventListener("click", () => loadTaskChat(activeTaskId, false)));
