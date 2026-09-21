@@ -68,6 +68,11 @@
     .agent-result{border-color:#665494}
     .agent-result .card-head{background:var(--consensus)}
     .agent-dock{flex:0 0 auto;border-top:1px solid var(--border);background:rgba(11,15,20,.98);backdrop-filter:blur(18px);padding:10px 14px max(12px,env(safe-area-inset-bottom))}
+    .agent-message-compose{display:flex;gap:8px;align-items:flex-end;margin-bottom:9px}
+    .agent-message-input{flex:1;min-height:48px;max-height:120px;resize:vertical;border:1px solid var(--border);border-radius:12px;background:var(--panel);color:var(--text);padding:10px 11px;outline:none}
+    .agent-message-input:focus{border-color:#4d6783}
+    .agent-message-send{flex:0 0 auto;min-height:48px}
+    .agent-message-compose.hidden{display:none}
     .agent-dock-status{font-size:12px;color:var(--muted);line-height:1.4;min-height:17px;margin-bottom:8px}
     .agent-dock-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     .agent-dock-actions .btn{width:100%}
@@ -127,6 +132,10 @@
       <div id="agentChat" class="agent-chat hidden">
         <div id="agentFeed" class="agent-feed"></div>
         <div class="agent-dock">
+          <div id="agentMessageComposer" class="agent-message-compose">
+            <textarea id="agentMessageInput" class="agent-message-input" placeholder="Tell the agent what to change, clarify, stop doing, or focus on..."></textarea>
+            <button class="btn primary agent-message-send" id="sendAgentMessageBtn">Send</button>
+          </div>
           <div id="agentChatStatus" class="agent-dock-status"></div>
           <div id="agentPrimaryActions" class="agent-dock-actions"></div>
           <div id="agentSecondaryActions" class="agent-dock-secondary"></div>
@@ -209,6 +218,16 @@
   }
 
   function stepCard(step) {
+    if (step.kind === "message" || step.actor === "Dylan") {
+      const when = step.created_at ? formatWhen(step.created_at) : "";
+      const seq = Number(step.sequence || 0);
+      return `
+        <section class="card speaker-Dylan">
+          <div class="card-head">DYLAN · GUIDANCE</div>
+          <div class="card-body">${escapeHtml(step.summary || "")}<div class="agent-step-meta">Step #${seq}${when ? " · " + escapeHtml(when) : ""}</div></div>
+        </section>`;
+    }
+
     const actor = step.actor === "Claude" ? "Claude" : "GPT";
     const when = step.created_at ? formatWhen(step.created_at) : "";
     const summary = escapeHtml(step.summary || "");
@@ -319,6 +338,8 @@
 
     const terminal = isTerminal(activeTask);
     const atBudget = isBudgetExhausted(activeTask);
+    const composer = document.getElementById("agentMessageComposer");
+    if (composer) composer.classList.toggle("hidden", terminal);
 
     if (activeTask.status === "waiting_approval") {
       primary.innerHTML = '<button class="btn primary" data-chat-open-tools="1">Review Approval</button><button class="btn" data-chat-refresh="1">Refresh</button>';
@@ -519,6 +540,35 @@
     }
   }
 
+  async function sendTaskMessage() {
+    if (agentBusy || !activeTaskId) return;
+    const input = document.getElementById("agentMessageInput");
+    const message = input?.value.trim();
+    if (!message) return;
+
+    agentBusy = true;
+    setAgentStatus("Sending guidance to the agent…");
+    try {
+      const data = await agentPost({action:"message",taskId:activeTaskId,message});
+      if (input) input.value = "";
+      await loadAgent(false);
+      await loadTaskChat(activeTaskId, true);
+
+      if (data?.task?.status === "waiting_approval") {
+        setAgentStatus("Guidance saved. The agent will use it after the pending approval is resolved.");
+        return;
+      }
+
+      agentBusy = false;
+      await driveTask(activeTaskId, 2);
+      return;
+    } catch (err) {
+      setAgentStatus(`Could not send guidance: ${String(err?.message || err)}`);
+    } finally {
+      agentBusy = false;
+    }
+  }
+
   async function extendAndContinue(taskId) {
     if (agentBusy || !taskId) return;
     agentBusy = true;
@@ -608,6 +658,13 @@
   document.getElementById("cortexBtn").addEventListener("click", showCortex);
   document.getElementById("refreshAgentBtn").addEventListener("click", () => cortexOpen ? loadCortex() : activeTaskId ? loadTaskChat(activeTaskId, false) : loadAgent());
   document.getElementById("startAgentBtn").addEventListener("click", startTask);
+  document.getElementById("sendAgentMessageBtn").addEventListener("click", sendTaskMessage);
+  document.getElementById("agentMessageInput").addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      sendTaskMessage();
+    }
+  });
 
   if (getSecret()) loadAgent(false);
 })();
