@@ -128,7 +128,7 @@ Do not ask Dylan to run commands when a connected tool can do the work.
 Keep context compact. Use agent_checkpoint after meaningful progress. Use agent_complete only when the requested outcome is actually verified live.
 If a tool fails, diagnose and try a materially different next step when appropriate.
 Avoid redundant inspection. Once live state is sufficiently understood, make material progress toward the goal instead of repeatedly inventorying the same repo, schema, functions, or task history.
-Use the smallest set of reads needed to justify an action. For implementation tasks, form a plan quickly and spend most steps implementing, testing, and verifying.
+Use the smallest set of reads needed to justify an action. Reuse facts established by recent tool results instead of guessing table, function, or path names. For implementation tasks, form a plan quickly and spend most steps implementing, testing, and verifying.
 You have a finite step budget of ${task.max_steps}; current persisted step count is ${task.step_count}. Reaching the budget is a pause point, not task failure.`;
 }
 
@@ -196,8 +196,9 @@ async function runTask(taskId: string) {
     {role:"user",content:taskContext(task,steps)}
   ];
 
+  let budgetReached = false;
   for (let action = 0; action < MAX_ACTIONS_PER_RUN; action++) {
-    if (Number(task.step_count) >= Number(task.max_steps)) break;
+    if (Number(task.step_count) >= Number(task.max_steps)) { budgetReached = true; break; }
     const data = await callGPT(messages);
     const message = data.choices?.[0]?.message ?? {};
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -213,6 +214,7 @@ async function runTask(taskId: string) {
 
     messages.push(message);
     for (const call of calls) {
+      if (Number(task.step_count) >= Number(task.max_steps)) { budgetReached = true; break; }
       const name = String(call?.function?.name || "");
       let args:any = {};
       try { args = JSON.parse(String(call?.function?.arguments || "{}")); } catch {}
@@ -269,9 +271,10 @@ async function runTask(taskId: string) {
       task = await loadTask(task.id);
       messages.push({role:"tool",tool_call_id:call.id,content:compact(toolResult)});
     }
+    if (budgetReached) break;
   }
 
-  const exhausted = Number(task.step_count) >= Number(task.max_steps);
+  const exhausted = budgetReached || Number(task.step_count) >= Number(task.max_steps);
   const state = exhausted ? {...(task.working_state || {}), budget_exhausted:true, next_step:task.working_state?.next_step || "Extend the task budget to continue."} : task.working_state;
   const { data: queued, error } = await supabase.from("thinktank_agent_tasks").update({
     status:"queued", working_state:state, error_text:null, completed_at:null, updated_at:new Date().toISOString()
