@@ -57,7 +57,7 @@ type Speaker = "Dylan" | "GPT" | "Claude" | "Consensus";
 type AiSpeaker = "GPT" | "Claude";
 type Attachment = { name: string; type?: string; size?: number; text: string };
 type Turn = { speaker: Speaker; text: string; attachments?: Attachment[] };
-type KnowledgeChunk = { document_id: string; document_name: string; chunk_index: number; content: string; rank: number };
+type KnowledgeChunk = { document_id: string; document_name: string; chunk_index: number; content: string; rank?: number; similarity?: number };
 type FinalizationState = {
   stage: "review" | "revise";
   cycle: number;
@@ -99,7 +99,7 @@ type HybridRetrieval = {
   vector_count: number;
 };
 
-type RetrievedChunk = KnowledgeChunk & { _source: "keyword" | "vector"; _score: number };
+type RetrievedChunk = KnowledgeChunk & { _source: "keyword" | "vector" | "hybrid"; _score: number };
 
 async function embedQuery(text: string) {
   const resp = await fetch("https://api.openai.com/v1/embeddings", {
@@ -108,7 +108,7 @@ async function embedQuery(text: string) {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${OPENAI_API_KEY}`,
     },
-    body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
+    body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000), encoding_format: "float" }),
   });
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "");
@@ -120,17 +120,24 @@ async function embedQuery(text: string) {
   return vec as number[];
 }
 
-function dedupeMerge(chunks: RetrievedChunk[], limit: number) {
-  const seen = new Set<string>();
-  const out: RetrievedChunk[] = [];
-  for (const c of chunks.sort((a, b) => b._score - a._score)) {
-    const key = `${c.document_id}:${c.chunk_index}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(c);
-    if (out.length >= limit) break;
-  }
-  return out;
+function reciprocalRankMerge(keywordChunks: KnowledgeChunk[], vectorChunks: KnowledgeChunk[], limit: number) {
+  const merged = new Map<string, RetrievedChunk>();
+  const add = (chunks: KnowledgeChunk[], source: "keyword" | "vector") => {
+    chunks.forEach((chunk, index) => {
+      const key = `${chunk.document_id}:${chunk.chunk_index}`;
+      const score = 1 / (60 + index + 1);
+      const existing = merged.get(key);
+      if (existing) {
+        existing._score += score;
+        existing._source = "hybrid";
+      } else {
+        merged.set(key, { ...chunk, _source: source, _score: score });
+      }
+    });
+  };
+  add(keywordChunks, "keyword");
+  add(vectorChunks, "vector");
+  return [...merged.values()].sort((a, b) => b._score - a._score).slice(0, limit);
 }
 
 async function getKnowledgeContext(searchBasis: string, mode: KnowledgeMode = "hybrid") {
@@ -139,29 +146,27 @@ async function getKnowledgeContext(searchBasis: string, mode: KnowledgeMode = "h
   const wantVector = mode === "hybrid" || mode === "vector";
 
   const keywordPromise = (async () => {
-    if (!wantKeyword || !keywordQuery) return [] as RetrievedChunk[];
+    if (!wantKeyword || !keywordQuery) return [] as KnowledgeChunk[];
     const { data, error } = await supabase.rpc("search_thinktank_chunks", { search_text: keywordQuery, match_count: 12 });
-    if (error) { console.warn("Keyword knowledge search failed:", error.message); return [] as RetrievedChunk[]; }
-    const chunks = ((data ?? []) as KnowledgeChunk[]).map((c, i) => ({ ...c, _source: "keyword" as const, _score: (c.rank ?? 0) + (12 - i) * 0.01 }));
-    return chunks;
+    if (error) { console.warn("Keyword knowledge search failed:", error.message); return [] as KnowledgeChunk[]; }
+    return (data ?? []) as KnowledgeChunk[];
   })();
 
   const vectorPromise = (async () => {
-    if (!wantVector) return [] as RetrievedChunk[];
+    if (!wantVector) return [] as KnowledgeChunk[];
     try {
       const embedding = await embedQuery(searchBasis);
       const { data, error } = await supabase.rpc("match_thinktank_chunks", { query_embedding: embedding, match_count: 12 });
-      if (error) { console.warn("Vector knowledge search failed:", error.message); return [] as RetrievedChunk[]; }
-      const chunks = ((data ?? []) as KnowledgeChunk[]).map((c, i) => ({ ...c, _source: "vector" as const, _score: (c.rank ?? 0) + (12 - i) * 0.01 }));
-      return chunks;
+      if (error) { console.warn("Vector knowledge search failed:", error.message); return [] as KnowledgeChunk[]; }
+      return (data ?? []) as KnowledgeChunk[];
     } catch (e) {
       console.warn("Vector knowledge search failed:", (e as Error).message);
-      return [] as RetrievedChunk[];
+      return [] as KnowledgeChunk[];
     }
   })();
 
   const [keywordChunks, vectorChunks] = await Promise.all([keywordPromise, vectorPromise]);
-  const merged = dedupeMerge([...keywordChunks, ...vectorChunks], 12);
+  const merged = reciprocalRankMerge(keywordChunks, vectorChunks, 12);
 
   let total = 0;
   const sections: string[] = [];
