@@ -343,7 +343,11 @@ async function runTask(taskId: string) {
   }
 
   const { data: started, error: startErr } = await supabase.from("thinktank_agent_tasks").update({
-    status:"running", updated_at:new Date().toISOString(), started_at:task.started_at || new Date().toISOString(), error_text:null
+    status:"running",
+    working_state:{...(task.working_state || {}),awaiting_user:false},
+    updated_at:new Date().toISOString(),
+    started_at:task.started_at || new Date().toISOString(),
+    error_text:null
   }).eq("id",task.id).select().single();
   if (startErr) throw startErr;
   task = started;
@@ -364,9 +368,16 @@ async function runTask(taskId: string) {
 
     if (!calls.length) {
       const text = String(message.content || "").trim() || "No tool action selected.";
-      const state = {...(task.working_state || {}), summary:text, next_step:"Continue task"};
-      await recordStep(task,"GPT","checkpoint","succeeded",text,{});
-      const { data: queued, error } = await supabase.from("thinktank_agent_tasks").update({status:"queued",working_state:state,updated_at:new Date().toISOString()}).eq("id",task.id).select().single();
+      const state = {
+        ...(task.working_state || {}),
+        summary:text,
+        next_step:"Wait for Dylan guidance or an explicit Continue.",
+        awaiting_user:true
+      };
+      await recordStep(task,"GPT","checkpoint","succeeded",text,{awaiting_user:true});
+      const { data: queued, error } = await supabase.from("thinktank_agent_tasks").update({
+        status:"queued",working_state:state,updated_at:new Date().toISOString()
+      }).eq("id",task.id).select().single();
       if (error) throw error;
       return queued;
     }
@@ -531,6 +542,7 @@ Deno.serve(async (req) => {
         ...(task.working_state || {}),
         latest_user_guidance:message,
         latest_user_guidance_at:new Date().toISOString(),
+        awaiting_user:false,
         next_step:"Incorporate Dylan's latest guidance and continue the existing task."
       };
       const nextStatus = task.status === "waiting_approval" ? "waiting_approval" : "queued";
