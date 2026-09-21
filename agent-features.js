@@ -77,7 +77,7 @@
     }
 
     wrap.innerHTML = agentTasks.map(task => {
-      const terminal = ["completed","failed","cancelled"].includes(task.status);
+      const budgetFailed = task.status === "failed" && String(task.error_text || "").startsWith("Step budget reached");\n      const terminal = ["completed","cancelled"].includes(task.status) || (task.status === "failed" && !budgetFailed);\n      const atBudget = budgetFailed || Number(task.step_count) >= Number(task.max_steps);
       return `
         <div class="agent-task">
           <div class="agent-task-top">
@@ -90,7 +90,7 @@
           <div class="agent-summary">${escapeHtml(taskSummary(task))}</div>
           ${task.status === "waiting_approval" ? '<div class="agent-summary">Waiting for a tool approval. Open Tools to review the exact action.</div>' : ""}
           <div class="agent-actions">
-            ${!terminal && task.status !== "waiting_approval" ? `<button class="btn primary small-btn" data-agent-continue="${escapeHtml(task.id)}">Continue</button>` : ""}
+            ${!terminal && task.status !== "waiting_approval" && !atBudget ? `<button class="btn primary small-btn" data-agent-continue="${escapeHtml(task.id)}">Continue</button>` : ""}\n            ${!terminal && atBudget ? `<button class="btn primary small-btn" data-agent-extend="${escapeHtml(task.id)}">Add 30 steps & Continue</button>` : ""}
             ${task.status === "waiting_approval" ? '<button class="btn small-btn" data-open-tools="1">Open Tools</button>' : ""}
             ${!terminal ? `<button class="btn danger small-btn" data-agent-cancel="${escapeHtml(task.id)}">Cancel</button>` : ""}
             <button class="btn small-btn" data-agent-details="${escapeHtml(task.id)}">Details</button>
@@ -98,7 +98,7 @@
         </div>`;
     }).join("");
 
-    wrap.querySelectorAll("[data-agent-continue]").forEach(btn => btn.addEventListener("click", () => driveTask(btn.dataset.agentContinue, 4)));
+    wrap.querySelectorAll("[data-agent-continue]").forEach(btn => btn.addEventListener("click", () => driveTask(btn.dataset.agentContinue, 4)));\n    wrap.querySelectorAll("[data-agent-extend]").forEach(btn => btn.addEventListener("click", () => extendAndContinue(btn.dataset.agentExtend)));
     wrap.querySelectorAll("[data-agent-cancel]").forEach(btn => btn.addEventListener("click", () => cancelTask(btn.dataset.agentCancel)));
     wrap.querySelectorAll("[data-agent-details]").forEach(btn => btn.addEventListener("click", () => showDetails(btn.dataset.agentDetails)));
     wrap.querySelectorAll("[data-open-tools]").forEach(btn => btn.addEventListener("click", () => {
@@ -145,6 +145,22 @@
     }
   }
 
+  async function extendAndContinue(taskId) {
+    if (agentBusy) return;
+    agentBusy = true;
+    setAgentStatus("Extending task budget by 30 steps…");
+    try {
+      await agentPost({action:"extend_budget",taskId,addSteps:30});
+      await loadAgent(false);
+    } catch (err) {
+      setAgentStatus(`Could not extend task: ${String(err?.message || err)}`);
+      agentBusy = false;
+      return;
+    }
+    agentBusy = false;
+    await driveTask(taskId, 4);
+  }
+
   async function startTask() {
     if (agentBusy) return;
     const goal = document.getElementById("agentGoal")?.value.trim();
@@ -155,7 +171,7 @@
     agentBusy = true;
     setAgentStatus("Creating task and starting first work pass…");
     try {
-      const data = await agentPost({action:"create",goal,maxSteps:30,autoRun:true});
+      const data = await agentPost({action:"create",goal,maxSteps:60,autoRun:true});
       document.getElementById("agentGoal").value = "";
       await loadAgent(false);
       const task = data.task;
