@@ -5,6 +5,7 @@
   let activeTaskId = null;
   let activeTask = null;
   let activeSteps = [];
+  let cortexOpen = false;
 
   const style = document.createElement("style");
   style.textContent = `
@@ -34,7 +35,19 @@
     .agent-status-pill.waiting_approval{color:#f7dfac;border-color:#6f5a2d;background:#30250f}
     .agent-status-pill.running{color:#c8e4ff;border-color:#365978;background:#102338}
     .agent-chat{flex:1;min-height:0;display:flex;flex-direction:column}
-    .agent-chat.hidden,.agent-home.hidden,#agentBackBtn.hidden{display:none}
+    .agent-chat.hidden,.agent-home.hidden,.cortex-view.hidden,#agentBackBtn.hidden{display:none}
+    .cortex-view{flex:1;overflow:auto;padding:16px 14px 80px}
+    .cortex-intro{border:1px solid var(--border);border-radius:16px;background:var(--panel);padding:14px;margin-bottom:16px;line-height:1.5}
+    .cortex-section-title{font-size:13px;font-weight:800;margin:18px 2px 9px}
+    .cortex-card{border:1px solid var(--border);border-radius:14px;background:var(--panel);padding:13px;margin-bottom:10px}
+    .cortex-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+    .cortex-card-title{font-weight:800;font-size:14px;line-height:1.35}
+    .cortex-status{font-size:10px;font-weight:800;border:1px solid var(--border);border-radius:999px;padding:4px 7px;white-space:nowrap;text-transform:uppercase}
+    .cortex-status.approved{color:#bff5d6;border-color:#315c46;background:#102b21}
+    .cortex-status.proposed{color:#f7dfac;border-color:#6f5a2d;background:#30250f}
+    .cortex-status.rejected,.cortex-status.retired{color:#b7bec8}
+    .cortex-text{font-size:13px;line-height:1.5;margin-top:7px;white-space:pre-wrap;word-break:break-word}
+    .cortex-meta{font-size:11px;color:var(--muted);line-height:1.4;margin-top:7px}
     .agent-feed{flex:1;overflow:auto;padding:16px 14px 28px}
     .agent-feed .card{box-shadow:none}
     .agent-tool-card,.agent-system-card{border:1px solid var(--border);border-radius:14px;background:var(--panel);margin-bottom:13px;overflow:hidden}
@@ -55,7 +68,7 @@
     .agent-dock-secondary{display:flex;gap:8px;margin-top:8px}
     .agent-dock-secondary .btn{flex:1}
     @media (min-width:700px){
-      .agent-home,.agent-feed{padding-left:24px;padding-right:24px}
+      .agent-home,.agent-feed,.cortex-view{padding-left:24px;padding-right:24px}
     }
   `;
   document.head.appendChild(style);
@@ -80,6 +93,7 @@
           </div>
           <div class="agent-header-actions">
             <button class="btn small-btn hidden" id="agentBackBtn">Tasks</button>
+            <button class="btn small-btn" id="cortexBtn">Cortex</button>
             <button class="btn small-btn" id="refreshAgentBtn">Refresh</button>
             <button class="btn small-btn" id="closeAgentBtn">Close</button>
           </div>
@@ -111,6 +125,14 @@
           <div id="agentPrimaryActions" class="agent-dock-actions"></div>
           <div id="agentSecondaryActions" class="agent-dock-secondary"></div>
         </div>
+      </div>
+
+      <div id="cortexView" class="cortex-view hidden">
+        <div class="cortex-intro">
+          <strong>Think Tank Cortex</strong>
+          <div class="small">Completed agent work becomes experience memory. Approved operating rules are injected into future agent runs. Proposed rules do nothing until you approve them.</div>
+        </div>
+        <div id="cortexContent"></div>
       </div>
     </div>
   `;
@@ -287,12 +309,95 @@
     if (scrollToBottom) setTimeout(() => { feed.scrollTop = feed.scrollHeight; }, 30);
   }
 
+  function renderCortex(data) {
+    const wrap = document.getElementById("cortexContent");
+    if (!wrap) return;
+    const rules = Array.isArray(data?.rules) ? data.rules : [];
+    const experiences = Array.isArray(data?.experiences) ? data.experiences : [];
+    const proposed = rules.filter(r => r.status === "proposed");
+    const approved = rules.filter(r => r.status === "approved");
+    const inactive = rules.filter(r => !["proposed","approved"].includes(r.status));
+
+    const ruleCard = (rule) => `
+      <div class="cortex-card">
+        <div class="cortex-card-top">
+          <div class="cortex-card-title">${escapeHtml(rule.title || rule.rule_key)}</div>
+          <div class="cortex-status ${escapeHtml(rule.status)}">${escapeHtml(rule.status)}</div>
+        </div>
+        <div class="cortex-text">${escapeHtml(rule.instruction || "")}</div>
+        ${rule.rationale ? `<div class="cortex-meta">Why: ${escapeHtml(rule.rationale)}</div>` : ""}
+        <div class="cortex-meta">Confidence: ${Math.round(Number(rule.confidence || 0) * 100)}% · used ${Number(rule.times_used || 0)} time(s)</div>
+        <div class="agent-actions">
+          ${rule.status === "proposed" ? `<button class="btn primary small-btn" data-cortex-rule="${escapeHtml(rule.id)}" data-cortex-status="approved">Approve</button><button class="btn small-btn" data-cortex-rule="${escapeHtml(rule.id)}" data-cortex-status="rejected">Reject</button>` : ""}
+          ${rule.status === "approved" ? `<button class="btn small-btn" data-cortex-rule="${escapeHtml(rule.id)}" data-cortex-status="retired">Retire</button>` : ""}
+        </div>
+      </div>`;
+
+    const experienceCards = experiences.length ? experiences.map(exp => `
+      <div class="cortex-card">
+        <div class="cortex-card-top">
+          <div class="cortex-card-title">${escapeHtml(exp.summary || exp.goal || "Agent experience")}</div>
+          <div class="cortex-status">${escapeHtml(exp.outcome || "")}</div>
+        </div>
+        <div class="cortex-text">${escapeHtml(exp.lesson || "")}</div>
+        <div class="cortex-meta">Goal: ${escapeHtml(exp.goal || "")}${Array.isArray(exp.tags) && exp.tags.length ? " · " + exp.tags.map(x => escapeHtml(x)).join(" · ") : ""}</div>
+      </div>
+    `).join("") : '<div class="library-empty">No experience memory yet.</div>';
+
+    wrap.innerHTML = `
+      <div class="cortex-section-title">Proposed rules (${proposed.length})</div>
+      ${proposed.length ? proposed.map(ruleCard).join("") : '<div class="library-empty">No proposed rules waiting for review.</div>'}
+      <div class="cortex-section-title">Approved rules (${approved.length})</div>
+      ${approved.length ? approved.map(ruleCard).join("") : '<div class="library-empty">No approved rules yet.</div>'}
+      ${inactive.length ? `<div class="cortex-section-title">Inactive rules (${inactive.length})</div>${inactive.map(ruleCard).join("")}` : ""}
+      <div class="cortex-section-title">Experience memory (${experiences.length})</div>
+      ${experienceCards}
+    `;
+
+    wrap.querySelectorAll("[data-cortex-rule]").forEach(btn => btn.addEventListener("click", async () => {
+      const ruleId = btn.dataset.cortexRule;
+      const status = btn.dataset.cortexStatus;
+      try {
+        await agentPost({action:"cortex_rule_status",ruleId,status});
+        await loadCortex();
+      } catch (err) {
+        setAgentStatus(`Cortex update failed: ${String(err?.message || err)}`);
+      }
+    }));
+  }
+
+  async function loadCortex() {
+    try {
+      const data = await agentPost({action:"cortex_list"});
+      renderCortex(data);
+      const proposed = Array.isArray(data?.rules) ? data.rules.filter(r => r.status === "proposed").length : 0;
+      setAgentStatus(proposed ? `${proposed} proposed Cortex rule(s) waiting for review.` : "Cortex is up to date.");
+    } catch (err) {
+      setAgentStatus(`Cortex unavailable: ${String(err?.message || err)}`);
+    }
+  }
+
+  async function showCortex() {
+    cortexOpen = true;
+    document.getElementById("agentHome")?.classList.add("hidden");
+    document.getElementById("agentChat")?.classList.add("hidden");
+    document.getElementById("cortexView")?.classList.remove("hidden");
+    document.getElementById("agentBackBtn")?.classList.remove("hidden");
+    const title = document.getElementById("agentHeaderTitle");
+    const sub = document.getElementById("agentHeaderSub");
+    if (title) title.textContent = "Think Tank Cortex";
+    if (sub) sub.textContent = "Experience memory + human-approved operating rules.";
+    await loadCortex();
+  }
+
   function showAgentHome() {
+    cortexOpen = false;
     activeTaskId = null;
     activeTask = null;
     activeSteps = [];
     document.getElementById("agentHome")?.classList.remove("hidden");
     document.getElementById("agentChat")?.classList.add("hidden");
+    document.getElementById("cortexView")?.classList.add("hidden");
     document.getElementById("agentBackBtn")?.classList.add("hidden");
     const title = document.getElementById("agentHeaderTitle");
     const sub = document.getElementById("agentHeaderSub");
@@ -301,8 +406,10 @@
   }
 
   async function openTaskChat(taskId) {
+    cortexOpen = false;
     activeTaskId = taskId;
     document.getElementById("agentHome")?.classList.add("hidden");
+    document.getElementById("cortexView")?.classList.add("hidden");
     document.getElementById("agentChat")?.classList.remove("hidden");
     document.getElementById("agentBackBtn")?.classList.remove("hidden");
     setAgentStatus("Loading agent workspace…");
@@ -448,7 +555,8 @@
   });
   document.getElementById("closeAgentBtn").addEventListener("click", () => overlay.classList.add("hidden"));
   document.getElementById("agentBackBtn").addEventListener("click", showAgentHome);
-  document.getElementById("refreshAgentBtn").addEventListener("click", () => activeTaskId ? loadTaskChat(activeTaskId, false) : loadAgent());
+  document.getElementById("cortexBtn").addEventListener("click", showCortex);
+  document.getElementById("refreshAgentBtn").addEventListener("click", () => cortexOpen ? loadCortex() : activeTaskId ? loadTaskChat(activeTaskId, false) : loadAgent());
   document.getElementById("startAgentBtn").addEventListener("click", startTask);
 
   if (getSecret()) loadAgent(false);
