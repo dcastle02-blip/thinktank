@@ -309,7 +309,25 @@
         <div class="agent-activity-title">AGENT ACTIVITY</div>`);
     }
 
-    for (const step of activeSteps) pieces.push(stepCard(step));
+    const answerNorm = answer.trim();
+    const visibleSteps = activeSteps.filter(step => {
+      if (step?.actor === "Dylan" || step?.kind === "message") return true;
+      if (["checkpoint","model"].includes(step?.kind)) {
+        const stepText = String(step?.summary || "").trim();
+        if (answerNorm && stepText === answerNorm) return false;
+      }
+      return true;
+    });
+
+    let lastRenderedKey = "";
+    for (const step of visibleSteps) {
+      const duplicateKey = ["checkpoint","model"].includes(step?.kind)
+        ? `${step.kind}::${String(step.summary || "").trim()}`
+        : "";
+      if (duplicateKey && duplicateKey === lastRenderedKey) continue;
+      pieces.push(stepCard(step));
+      lastRenderedKey = duplicateKey;
+    }
 
     if (activeTask.status === "waiting_approval") {
       pieces.push(`
@@ -320,13 +338,7 @@
         </div>`);
     }
 
-    if (activeTask.result) {
-      pieces.push(`
-        <section class="card agent-result">
-          <div class="card-head">AGENT RESULT</div>
-          <div class="card-body">${escapeHtml(activeTask.result)}</div>
-        </section>`);
-    } else if (activeTask.error_text && !isBudgetExhausted(activeTask)) {
+    if (activeTask.error_text && !isBudgetExhausted(activeTask)) {
       pieces.push(`
         <section class="agent-system-card">
           <div class="agent-system-head">TASK ERROR</div>
@@ -527,6 +539,10 @@
         if (["waiting_approval","completed","failed","cancelled"].includes(task.status)) {
           if (task.status === "waiting_approval") setAgentStatus("Agent paused for approval.");
           else setAgentStatus(`Agent task ${task.status}.`);
+          return;
+        }
+        if (task.status === "queued" && task.working_state?.awaiting_user) {
+          setAgentStatus("Agent responded. Send guidance or press Continue when you want another pass.");
           return;
         }
       }
