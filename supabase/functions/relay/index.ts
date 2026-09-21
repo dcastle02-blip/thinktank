@@ -88,23 +88,107 @@ function buildSearchText(text: string) {
   unique.reverse();
   return unique.join(" OR ");
 }
-async function getKnowledgeContext(searchBasis: string) {
-  const searchText = buildSearchText(searchBasis);
-  if (!searchText) return { context: "", chunks: [] as KnowledgeChunk[] };
-  const { data, error } = await supabase.rpc("search_thinktank_chunks", { search_text: searchText, match_count: 12 });
-  if (error) { console.warn("Knowledge search failed:", error.message); return { context: "", chunks: [] as KnowledgeChunk[] }; }
-  const chunks = (data ?? []) as KnowledgeChunk[];
+type KnowledgeMode = "hybrid" | "vector" | "keyword";
+
+type HybridRetrieval = {
+  mode: KnowledgeMode;
+  query: string;
+  keyword_query: string;
+  used_embedding: boolean;
+  keyword_count: number;
+  vector_count: number;
+};
+
+type RetrievedChunk = KnowledgeChunk & { _source: "keyword" | "vector"; _score: number };
+
+async function embedQuery(text: string) {
+  const resp = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`OpenAI embeddings failed: ${resp.status} ${errText}`);
+  }
+  const json = await resp.json();
+  const vec = json?.data?.[0]?.embedding;
+  if (!Array.isArray(vec) || vec.length !== 1536) throw new Error("Bad embedding shape");
+  return vec as number[];
+}
+
+function dedupeMerge(chunks: RetrievedChunk[], limit: number) {
+  const seen = new Set<string>();
+  const out: RetrievedChunk[] = [];
+  for (const c of chunks.sort((a, b) => b._score - a._score)) {
+    const key = `${c.document_id}:${c.chunk_index}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+async function getKnowledgeContext(searchBasis: string, mode: KnowledgeMode = "hybrid") {
+  const keywordQuery = buildSearchText(searchBasis);
+  const wantKeyword = mode === "hybrid" || mode === "keyword";
+  const wantVector = mode === "hybrid" || mode === "vector";
+
+  const keywordPromise = (async () => {
+    if (!wantKeyword || !keywordQuery) return [] as RetrievedChunk[];
+    const { data, error } = await supabase.rpc("search_thinktank_chunks", { search_text: keywordQuery, match_count: 12 });
+    if (error) { console.warn("Keyword knowledge search failed:", error.message); return [] as RetrievedChunk[]; }
+    const chunks = ((data ?? []) as KnowledgeChunk[]).map((c, i) => ({ ...c, _source: "keyword" as const, _score: (c.rank ?? 0) + (12 - i) * 0.01 }));
+    return chunks;
+  })();
+
+  const vectorPromise = (async () => {
+    if (!wantVector) return [] as RetrievedChunk[];
+    try {
+      const embedding = await embedQuery(searchBasis);
+      const { data, error } = await supabase.rpc("match_thinktank_chunks", { query_embedding: embedding, match_count: 12 });
+      if (error) { console.warn("Vector knowledge search failed:", error.message); return [] as RetrievedChunk[]; }
+      const chunks = ((data ?? []) as KnowledgeChunk[]).map((c, i) => ({ ...c, _source: "vector" as const, _score: (c.rank ?? 0) + (12 - i) * 0.01 }));
+      return chunks;
+    } catch (e) {
+      console.warn("Vector knowledge search failed:", (e as Error).message);
+      return [] as RetrievedChunk[];
+    }
+  })();
+
+  const [keywordChunks, vectorChunks] = await Promise.all([keywordPromise, vectorPromise]);
+  const merged = dedupeMerge([...keywordChunks, ...vectorChunks], 12);
+
   let total = 0;
   const sections: string[] = [];
   const used: KnowledgeChunk[] = [];
-  for (const chunk of chunks) {
-    const section = `[KNOWLEDGE FILE: ${chunk.document_name} | section ${chunk.chunk_index + 1}]\n${chunk.content}`;
+  for (const chunk of merged) {
+    const section = `[KNOWLEDGE FILE: ${chunk.document_name} | section ${chunk.chunk_index + 1} | ${chunk._source}]\n${chunk.content}`;
     if (total + section.length > MAX_KNOWLEDGE_CHARS) break;
-    sections.push(section); used.push(chunk); total += section.length;
+    sections.push(section);
+    used.push(chunk);
+    total += section.length;
   }
+
+  const retrieval: HybridRetrieval = {
+    mode,
+    query: searchBasis.slice(0, 8000),
+    keyword_query: keywordQuery,
+    used_embedding: vectorChunks.length > 0,
+    keyword_count: keywordChunks.length,
+    vector_count: vectorChunks.length,
+  };
+
   return {
-    context: sections.length ? `KNOWLEDGE LIBRARY EXCERPTS\nThe following excerpts were retrieved from Dylan's persistent uploaded library. Use only what is relevant.\n\n${sections.join("\n\n---\n\n")}` : "",
+    context: sections.length
+      ? `KNOWLEDGE LIBRARY EXCERPTS\nThe following excerpts were retrieved from Dylan's persistent uploaded library. Use only what is relevant.\n\n[retrieval: ${JSON.stringify(retrieval)}]\n\n${sections.join("\n\n---\n\n")}`
+      : "",
     chunks: used,
+    retrieval,
   };
 }
 function recentSearchBasis(transcript: Turn[], extra = "") {
