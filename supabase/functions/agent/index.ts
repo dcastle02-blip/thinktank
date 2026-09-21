@@ -170,7 +170,8 @@ async function refreshWaitingTask(task: any) {
 
 async function runTask(taskId: string) {
   let task = await loadTask(taskId);
-  if (["completed","cancelled"].includes(task.status)) return task;\n  if (task.status === "failed" && !String(task.error_text || "").startsWith("Step budget reached")) return task;
+  if (["completed","cancelled"].includes(task.status)) return task;
+  if (task.status === "failed" && !String(task.error_text || "").startsWith("Step budget reached")) return task;
   task = await refreshWaitingTask(task);
   if (task.status === "waiting_approval") return task;
 
