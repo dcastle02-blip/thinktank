@@ -34,6 +34,7 @@
     .agent-status-pill.waiting_approval{color:#f7dfac;border-color:#6f5a2d;background:#30250f}
     .agent-status-pill.running{color:#c8e4ff;border-color:#365978;background:#102338}
     .agent-chat{flex:1;min-height:0;display:flex;flex-direction:column}
+    .agent-chat.hidden,.agent-home.hidden,#agentBackBtn.hidden{display:none}
     .agent-feed{flex:1;overflow:auto;padding:16px 14px 28px}
     .agent-feed .card{box-shadow:none}
     .agent-tool-card,.agent-system-card{border:1px solid var(--border);border-radius:14px;background:var(--panel);margin-bottom:13px;overflow:hidden}
