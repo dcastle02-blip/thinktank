@@ -296,19 +296,6 @@
       `<section class="card speaker-Dylan"><div class="card-head">DYLAN · AGENT GOAL</div><div class="card-body">${escapeHtml(activeTask.goal || "")}</div></section>`
     ];
 
-    if (answer) {
-      pieces.push(`
-        <section class="agent-answer-wrap">
-          <div class="agent-answer-head">
-            <div class="agent-answer-title">AGENT ANSWER</div>
-            <button class="btn primary small-btn" data-copy-agent-answer="1">Copy Answer</button>
-          </div>
-          <textarea id="agentAnswerBox" class="agent-answer-box" readonly spellcheck="false">${escapeHtml(answer)}</textarea>
-          <div class="agent-answer-note">One complete copy/paste box. Tool activity stays separate below.</div>
-        </section>
-        <div class="agent-activity-title">AGENT ACTIVITY</div>`);
-    }
-
     const answerNorm = answer.trim();
     const visibleSteps = activeSteps.filter(step => {
       if (step?.actor === "Dylan" || step?.kind === "message") return true;
@@ -327,6 +314,18 @@
       if (duplicateKey && duplicateKey === lastRenderedKey) continue;
       pieces.push(stepCard(step));
       lastRenderedKey = duplicateKey;
+    }
+
+    if (answer) {
+      pieces.push(`
+        <section class="agent-answer-wrap">
+          <div class="agent-answer-head">
+            <div class="agent-answer-title">AGENT ANSWER</div>
+            <button class="btn primary small-btn" data-copy-agent-answer="1">Copy Answer</button>
+          </div>
+          <textarea id="agentAnswerBox" class="agent-answer-box" readonly spellcheck="false">${escapeHtml(answer)}</textarea>
+          <div class="agent-answer-note">Latest Agent response. One complete copy/paste box.</div>
+        </section>`);
     }
 
     if (activeTask.status === "waiting_approval") {
