@@ -127,7 +127,9 @@ Writes/destructive actions may return awaiting_approval. If that happens, stop i
 Do not ask Dylan to run commands when a connected tool can do the work.
 Keep context compact. Use agent_checkpoint after meaningful progress. Use agent_complete only when the requested outcome is actually verified live.
 If a tool fails, diagnose and try a materially different next step when appropriate.
-You have a finite step budget of ${task.max_steps}; current persisted step count is ${task.step_count}.`;
+Avoid redundant inspection. Once live state is sufficiently understood, make material progress toward the goal instead of repeatedly inventorying the same repo, schema, functions, or task history.
+Use the smallest set of reads needed to justify an action. For implementation tasks, form a plan quickly and spend most steps implementing, testing, and verifying.
+You have a finite step budget of ${task.max_steps}; current persisted step count is ${task.step_count}. Reaching the budget is a pause point, not task failure.`;
 }
 
 async function callGPT(messages: any[]) {
@@ -168,13 +170,16 @@ async function refreshWaitingTask(task: any) {
 
 async function runTask(taskId: string) {
   let task = await loadTask(taskId);
-  if (["completed","failed","cancelled"].includes(task.status)) return task;
+  if (["completed","cancelled"].includes(task.status)) return task;\n  if (task.status === "failed" && !String(task.error_text || "").startsWith("Step budget reached")) return task;
   task = await refreshWaitingTask(task);
   if (task.status === "waiting_approval") return task;
 
   if (Number(task.step_count) >= Number(task.max_steps)) {
-    const message = `Step budget reached (${task.step_count}/${task.max_steps}). Increase the budget or start a follow-up task.`;
-    const { data } = await supabase.from("thinktank_agent_tasks").update({status:"failed",error_text:message,updated_at:new Date().toISOString(),completed_at:new Date().toISOString()}).eq("id",task.id).select().single();
+    const state = {...(task.working_state || {}), budget_exhausted:true, next_step:task.working_state?.next_step || "Extend the task budget to continue."};
+    const { data, error } = await supabase.from("thinktank_agent_tasks").update({
+      status:"queued", working_state:state, error_text:null, completed_at:null, updated_at:new Date().toISOString()
+    }).eq("id",task.id).select().single();
+    if (error) throw error;
     return data;
   }
 
@@ -265,7 +270,11 @@ async function runTask(taskId: string) {
     }
   }
 
-  const { data: queued, error } = await supabase.from("thinktank_agent_tasks").update({status:"queued",updated_at:new Date().toISOString()}).eq("id",task.id).select().single();
+  const exhausted = Number(task.step_count) >= Number(task.max_steps);
+  const state = exhausted ? {...(task.working_state || {}), budget_exhausted:true, next_step:task.working_state?.next_step || "Extend the task budget to continue."} : task.working_state;
+  const { data: queued, error } = await supabase.from("thinktank_agent_tasks").update({
+    status:"queued", working_state:state, error_text:null, completed_at:null, updated_at:new Date().toISOString()
+  }).eq("id",task.id).select().single();
   if (error) throw error;
   return queued;
 }
@@ -297,7 +306,7 @@ Deno.serve(async (req) => {
       const goal = String(body.goal || "").trim();
       if (!goal) return json({error:"goal is required"},400);
       const title = String(body.title || goal.slice(0,80)).trim().slice(0,120);
-      const maxSteps = Math.max(1,Math.min(100,Number(body.maxSteps || 30)));
+      const maxSteps = Math.max(1,Math.min(100,Number(body.maxSteps || 60)));
       const { data:task, error } = await supabase.from("thinktank_agent_tasks").insert({title,goal,max_steps:maxSteps,status:"queued"}).select().single();
       if (error) throw error;
       await recordStep(task,"System","system","succeeded","Task created",{goal});
@@ -308,6 +317,22 @@ Deno.serve(async (req) => {
     if (action === "run" || action === "resume") {
       const task = await runTask(String(body.taskId || ""));
       return json({task});
+    }
+
+    if (action === "extend_budget") {
+      const id = String(body.taskId || "");
+      const task = await loadTask(id);
+      if (["completed","cancelled"].includes(task.status)) return json({error:"completed or cancelled tasks cannot be extended"},409);
+      if (task.status === "failed" && !String(task.error_text || "").startsWith("Step budget reached")) return json({error:"only budget-exhausted failed tasks can be reopened automatically"},409);
+      const add = Math.max(1,Math.min(50,Number(body.addSteps || 30)));
+      const maxSteps = Math.min(100,Math.max(Number(task.max_steps || 0),Number(task.step_count || 0)) + add);
+      if (maxSteps <= Number(task.step_count || 0)) return json({error:"task is already at the maximum 100-step budget"},409);
+      const state = {...(task.working_state || {}), budget_exhausted:false};
+      const { data, error } = await supabase.from("thinktank_agent_tasks").update({
+        max_steps:maxSteps,status:"queued",working_state:state,error_text:null,completed_at:null,updated_at:new Date().toISOString()
+      }).eq("id",id).select().single();
+      if (error) throw error;
+      return json({task:data});
     }
 
     if (action === "resume_activity") {
