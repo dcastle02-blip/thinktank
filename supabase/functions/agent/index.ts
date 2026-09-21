@@ -10,6 +10,8 @@ const GPT_MODEL = "gpt-5.2";
 const ALLOWED_ORIGIN = "https://dcastle02-blip.github.io";
 const MAX_ACTIONS_PER_RUN = 4;
 const MAX_TOOL_RESULT_CHARS = 12000;
+const EMBEDDING_MODEL = "text-embedding-3-small";
+const EMBEDDING_DIMS = 1536;
 
 const supabase = createClient(SUPABASE_URL, ADMIN_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 const CORS_HEADERS = {
@@ -68,6 +70,156 @@ function compact(value: unknown, max = MAX_TOOL_RESULT_CHARS) {
   return s.length > max ? s.slice(0, max) + "\n[truncated]" : s;
 }
 
+async function createEmbedding(text: string) {
+  const res = await fetch("https://api.openai.com/v1/embeddings", {
+    method:"POST",
+    headers:{"Authorization":`Bearer ${OPENAI_API_KEY}`,"Content-Type":"application/json"},
+    body:JSON.stringify({model:EMBEDDING_MODEL,input:text.slice(0,24000),encoding_format:"float"}),
+  });
+  const raw = await res.text();
+  let data:any = null;
+  try { data = raw ? JSON.parse(raw) : null; } catch {}
+  if (!res.ok) throw new Error(`OpenAI embeddings ${res.status}: ${data?.error?.message || raw.slice(0,500)}`);
+  const vector = data?.data?.[0]?.embedding;
+  if (!Array.isArray(vector) || vector.length !== EMBEDDING_DIMS) throw new Error("Unexpected Cortex embedding shape");
+  return vector as number[];
+}
+
+async function callGPTJson(system: string, user: string) {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method:"POST",
+    headers:{"Authorization":`Bearer ${OPENAI_API_KEY}`,"Content-Type":"application/json"},
+    body:JSON.stringify({
+      model:GPT_MODEL,
+      max_completion_tokens:1200,
+      response_format:{type:"json_object"},
+      messages:[{role:"system",content:system},{role:"user",content:user}],
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const raw = String(data?.choices?.[0]?.message?.content || "{}");
+  return JSON.parse(raw);
+}
+
+async function loadCortexContext(goal: string) {
+  const { data: rules, error: ruleErr } = await supabase
+    .from("thinktank_cortex_rules")
+    .select("id,rule_key,title,instruction,rationale,confidence,times_used")
+    .eq("status","approved")
+    .order("confidence",{ascending:false})
+    .limit(20);
+  if (ruleErr) throw ruleErr;
+
+  let semantic:any[] = [];
+  try {
+    const queryEmbedding = await createEmbedding(goal);
+    const { data, error } = await supabase.rpc("match_thinktank_cortex_experiences", {
+      query_embedding: queryEmbedding,
+      match_count: 6,
+    });
+    if (!error) semantic = data ?? [];
+  } catch (err) {
+    console.error("Cortex semantic retrieval failed", err);
+  }
+
+  const { data: recent, error: recentErr } = await supabase
+    .from("thinktank_cortex_experiences")
+    .select("id,source_task_id,goal,outcome,summary,lesson,evidence,tags,created_at")
+    .order("created_at",{ascending:false})
+    .limit(3);
+  if (recentErr) throw recentErr;
+
+  const merged:any[] = [];
+  const seen = new Set<string>();
+  for (const item of [...semantic, ...(recent ?? [])]) {
+    if (!item?.id || seen.has(item.id)) continue;
+    seen.add(item.id);
+    merged.push(item);
+    if (merged.length >= 6) break;
+  }
+
+  for (const rule of rules ?? []) {
+    await supabase.from("thinktank_cortex_rules").update({
+      times_used:Number(rule.times_used || 0)+1,
+      last_used_at:new Date().toISOString(),
+    }).eq("id",rule.id);
+  }
+
+  return {rules:rules ?? [], experiences:merged};
+}
+
+function formatCortexContext(cortex:any) {
+  const rules = (cortex?.rules ?? []).map((r:any) =>
+    `- [${r.rule_key}] ${r.instruction}`
+  ).join("\n");
+  const experiences = (cortex?.experiences ?? []).map((e:any) =>
+    `- Outcome: ${e.outcome}. Goal: ${e.goal}\n  Lesson: ${e.lesson}\n  Evidence: ${compact(e.evidence,1600)}`
+  ).join("\n");
+  return `APPROVED OPERATING RULES
+${rules || "(none yet)"}
+
+RELEVANT EXPERIENCE MEMORY
+${experiences || "(none yet)"}`;
+}
+
+async function captureCortexExperience(task:any, outcome:"success"|"partial"|"failure"|"cancelled", result:string, verification:any[] = []) {
+  const { data: existing } = await supabase
+    .from("thinktank_cortex_experiences")
+    .select("id")
+    .eq("source_task_id",task.id)
+    .maybeSingle();
+  if (existing?.id) return {experienceId:existing.id,created:false};
+
+  const steps = await recentSteps(task.id,50);
+  const evidence = steps.slice(-16).map((s:any) => ({
+    sequence:s.sequence, kind:s.kind, status:s.status, summary:s.summary
+  }));
+  const extraction = await callGPTJson(
+    "You extract durable experience from a supervised software-agent task. Use only the supplied evidence. Do not invent user preferences, motives, or facts. A candidate rule should be proposed only when the evidence supports a reusable behavior change for future agent work. Return strict JSON with keys summary, lesson, tags, candidate_rule. candidate_rule must be null or an object with title, instruction, rationale, confidence from 0 to 1.",
+    `Goal:\n${task.goal}\n\nOutcome: ${outcome}\n\nResult:\n${result}\n\nVerification:\n${compact(verification,4000)}\n\nRecent evidence:\n${compact(evidence,9000)}`
+  );
+
+  const summary = String(extraction?.summary || result || task.goal).slice(0,4000);
+  const lesson = String(extraction?.lesson || "No durable lesson extracted.").slice(0,6000);
+  const tags = Array.isArray(extraction?.tags) ? extraction.tags.map((x:any)=>String(x).slice(0,80)).slice(0,12) : [];
+  let embedding:number[]|null = null;
+  try { embedding = await createEmbedding(`${task.goal}\n${summary}\n${lesson}`); } catch (err) { console.error("Cortex experience embedding failed",err); }
+
+  const { data: experience, error } = await supabase.from("thinktank_cortex_experiences").insert({
+    source_task_id:task.id,
+    goal:task.goal,
+    outcome,
+    summary,
+    lesson,
+    evidence,
+    tags,
+    embedding,
+  }).select("id").single();
+  if (error) throw error;
+
+  const candidate = extraction?.candidate_rule;
+  let proposedRuleId:string|null = null;
+  if (candidate && typeof candidate === "object" && String(candidate.instruction || "").trim()) {
+    const confidence = Math.max(0,Math.min(1,Number(candidate.confidence ?? 0.5)));
+    const ruleKey = `task-${task.id}`;
+    const { data: rule, error: ruleErr } = await supabase.from("thinktank_cortex_rules").upsert({
+      rule_key:ruleKey,
+      title:String(candidate.title || "Proposed operating rule").slice(0,180),
+      instruction:String(candidate.instruction).slice(0,4000),
+      rationale:String(candidate.rationale || lesson).slice(0,4000),
+      status:"proposed",
+      source_task_id:task.id,
+      confidence,
+      updated_at:new Date().toISOString(),
+    },{onConflict:"rule_key"}).select("id").single();
+    if (ruleErr) throw ruleErr;
+    proposedRuleId = rule.id;
+  }
+
+  return {experienceId:experience.id,proposedRuleId,created:true};
+}
+
 async function broker(toolName: string, args: Record<string, unknown>) {
   const res = await fetch(TOOLS_URL, {
     method:"POST",
@@ -107,7 +259,7 @@ async function recordStep(task: any, actor: "GPT"|"System", kind: string, status
   Object.assign(task, data);
 }
 
-function taskContext(task: any, steps: any[]) {
+function taskContext(task: any, steps: any[], cortex: any) {
   const history = steps.map(s => `#${s.sequence} ${s.actor}/${s.kind}/${s.status}: ${s.summary}\n${compact(s.detail,3000)}`).join("\n\n");
   return `TASK GOAL
 ${task.goal}
@@ -120,6 +272,10 @@ ${compact(task.working_state || {},6000)}
 
 RECENT STEPS
 ${history || "(none)"}
+
+${formatCortexContext(cortex)}
+
+Treat approved Cortex rules as persistent operating instructions unless the current user goal, tool permissions, or safety constraints require otherwise. Treat experience memory as evidence to reuse, not as infallible truth.
 
 Operate as Dylan's supervised software agent. Work toward the task outcome, not toward producing conversation.
 Use live tools whenever current GitHub or Supabase state matters. Inspect before modifying. Prefer focused edits. Never claim a write succeeded until a later read verifies it.
@@ -191,9 +347,10 @@ async function runTask(taskId: string) {
   task = started;
 
   const steps = await recentSteps(task.id);
+  const cortex = await loadCortexContext(task.goal);
   const messages:any[] = [
     {role:"system",content:"You are the execution engine for Dylan's Think Tank Agent. Take concrete actions through the provided tools. Human approval boundaries are enforced by the Tool Broker."},
-    {role:"user",content:taskContext(task,steps)}
+    {role:"user",content:taskContext(task,steps,cortex)}
   ];
 
   let budgetReached = false;
@@ -243,7 +400,15 @@ async function runTask(taskId: string) {
           status:"completed",result,working_state:{...(task.working_state || {}),verification},updated_at:new Date().toISOString(),completed_at:new Date().toISOString()
         }).eq("id",task.id).select().single();
         if (error) throw error;
-        return completed;
+        try {
+          const cortexCapture = await captureCortexExperience(completed,"success",result,verification);
+          const state = {...(completed.working_state || {}),cortex:cortexCapture};
+          const { data:withCortex } = await supabase.from("thinktank_agent_tasks").update({working_state:state}).eq("id",task.id).select().single();
+          return withCortex || completed;
+        } catch (err) {
+          console.error("Cortex capture failed",err);
+          return completed;
+        }
       }
 
       let toolResult:any;
@@ -356,6 +521,34 @@ Deno.serve(async (req) => {
       }).eq("id",id).select().single();
       if (error) throw error;
       return json({task:data});
+    }
+
+    if (action === "cortex_list") {
+      const [rulesRes, experiencesRes] = await Promise.all([
+        supabase.from("thinktank_cortex_rules").select("*").order("updated_at",{ascending:false}).limit(100),
+        supabase.from("thinktank_cortex_experiences").select("id,source_task_id,goal,outcome,summary,lesson,evidence,tags,created_at").order("created_at",{ascending:false}).limit(100),
+      ]);
+      if (rulesRes.error) throw rulesRes.error;
+      if (experiencesRes.error) throw experiencesRes.error;
+      return json({rules:rulesRes.data ?? [],experiences:experiencesRes.data ?? []});
+    }
+
+    if (action === "cortex_rule_status") {
+      const id = String(body.ruleId || "");
+      const status = String(body.status || "");
+      if (!["approved","rejected","retired"].includes(status)) return json({error:"invalid Cortex rule status"},400);
+      const { data, error } = await supabase.from("thinktank_cortex_rules").update({
+        status,updated_at:new Date().toISOString()
+      }).eq("id",id).select().single();
+      if (error) throw error;
+      return json({rule:data});
+    }
+
+    if (action === "cortex_capture_task") {
+      const task = await loadTask(String(body.taskId || ""));
+      const outcome = task.status === "completed" ? "success" : task.status === "cancelled" ? "cancelled" : task.status === "failed" ? "failure" : "partial";
+      const captured = await captureCortexExperience(task,outcome,String(task.result || task.error_text || task.working_state?.summary || ""),Array.isArray(task.working_state?.verification) ? task.working_state.verification : []);
+      return json({captured});
     }
 
     return json({error:`unsupported action: ${action}`},400);
