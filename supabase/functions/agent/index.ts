@@ -245,7 +245,7 @@ async function recentSteps(taskId: string, limit = 12) {
   return (data ?? []).reverse();
 }
 
-async function recordStep(task: any, actor: "GPT"|"System", kind: string, status: string, summary: string, detail: Record<string,unknown> = {}) {
+async function recordStep(task: any, actor: "Dylan"|"GPT"|"System", kind: string, status: string, summary: string, detail: Record<string,unknown> = {}) {
   const sequence = Number(task.step_count || 0) + 1;
   const { error } = await supabase.from("thinktank_agent_steps").insert({
     task_id:task.id, sequence, actor, kind, status, summary:summary.slice(0,12000), detail
@@ -272,6 +272,8 @@ ${compact(task.working_state || {},6000)}
 
 RECENT STEPS
 ${history || "(none)"}
+
+IMPORTANT: Any recent step from Dylan with kind=message is live user guidance for this same task. Treat the newest Dylan message as higher priority than older task assumptions unless it conflicts with safety or tool permissions. Do not restart the task; adjust the current plan and continue.
 
 ${formatCortexContext(cortex)}
 
@@ -512,6 +514,33 @@ Deno.serve(async (req) => {
       if (!task) return json({resumed:false});
       const resumed = await runTask(task.id);
       return json({resumed:true,task:resumed});
+    }
+
+    if (action === "message") {
+      const id = String(body.taskId || "");
+      const message = String(body.message || "").trim();
+      if (!message) return json({error:"message is required"},400);
+
+      let task = await loadTask(id);
+      if (["completed","cancelled"].includes(task.status)) {
+        return json({error:"This task is closed. Start a follow-up task to continue work."},409);
+      }
+
+      await recordStep(task,"Dylan","message","succeeded",message,{source:"task_composer"});
+      const state = {
+        ...(task.working_state || {}),
+        latest_user_guidance:message,
+        latest_user_guidance_at:new Date().toISOString(),
+        next_step:"Incorporate Dylan's latest guidance and continue the existing task."
+      };
+      const nextStatus = task.status === "waiting_approval" ? "waiting_approval" : "queued";
+      const { data, error } = await supabase.from("thinktank_agent_tasks").update({
+        status:nextStatus,
+        working_state:state,
+        updated_at:new Date().toISOString()
+      }).eq("id",id).select().single();
+      if (error) throw error;
+      return json({task:data});
     }
 
     if (action === "cancel") {
