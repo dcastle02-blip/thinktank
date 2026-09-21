@@ -82,23 +82,27 @@ async function createEmbeddings(inputs: string[]) {
   });
 }
 
+function errorMessage(err: unknown) {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try { return JSON.stringify(err); } catch { return String(err); }
+}
+
 async function persistAttemptRows(rows: ChunkRow[], embeddings: number[][] | null) {
   const now = new Date().toISOString();
-  const updates = rows.map((row, index) => ({
-    id: row.id,
-    document_id: row.document_id,
-    document_name: row.document_name,
-    chunk_index: row.chunk_index,
-    content: row.content,
-    embedding: embeddings ? embeddings[index] : null,
-    embedding_attempts: Number(row.embedding_attempts || 0) + 1,
-    embedded_at: embeddings ? now : null,
-  }));
+  await Promise.all(rows.map(async (row, index) => {
+    const payload: Record<string, unknown> = {
+      embedding_attempts: Number(row.embedding_attempts || 0) + 1,
+      embedded_at: embeddings ? now : null,
+    };
+    if (embeddings) payload.embedding = embeddings[index];
 
-  const { error } = await supabase
-    .from("thinktank_document_chunks")
-    .upsert(updates, { onConflict: "id" });
-  if (error) throw error;
+    const { error } = await supabase
+      .from("thinktank_document_chunks")
+      .update(payload)
+      .eq("id", row.id);
+    if (error) throw new Error(errorMessage(error));
+  }));
 }
 
 async function embedRows(rows: ChunkRow[]) {
@@ -108,7 +112,7 @@ async function embedRows(rows: ChunkRow[]) {
     await persistAttemptRows(rows, embeddings);
     return { attempted: rows.length, embedded: rows.length, failed: 0, error: null as string | null };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     try {
       await persistAttemptRows(rows, null);
     } catch (persistErr) {
@@ -116,7 +120,7 @@ async function embedRows(rows: ChunkRow[]) {
         attempted: rows.length,
         embedded: 0,
         failed: rows.length,
-        error: `${message}; failed to record attempts: ${persistErr instanceof Error ? persistErr.message : String(persistErr)}`,
+        error: `${message}; failed to record attempts: ${errorMessage(persistErr)}`,
       };
     }
     return { attempted: rows.length, embedded: 0, failed: rows.length, error: message };
