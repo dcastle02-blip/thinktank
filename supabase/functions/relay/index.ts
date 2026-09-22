@@ -140,7 +140,71 @@ function reciprocalRankMerge(keywordChunks: KnowledgeChunk[], vectorChunks: Know
   return [...merged.values()].sort((a, b) => b._score - a._score).slice(0, limit);
 }
 
+type ProcessClaim = {
+  id:string;
+  claim_key:string;
+  claim_type:string;
+  statement:string;
+  structured?:Record<string,unknown>;
+  scope?:Record<string,unknown>;
+  authority:string;
+  confidence:number;
+  source_effective_date?:string|null;
+  similarity?:number;
+  rank?:number;
+};
+
+async function getProcessMemoryContext(searchBasis:string){
+  const {count,error:countError}=await supabase
+    .from("thinktank_process_claims")
+    .select("id",{head:true,count:"exact"})
+    .eq("status","active");
+  if(countError || !count) return {context:"",claims:[] as ProcessClaim[]};
+
+  const keywordQuery=buildSearchText(searchBasis);
+  const keywordPromise=(async()=>{
+    if(!keywordQuery) return [] as ProcessClaim[];
+    const {data,error}=await supabase.rpc("search_thinktank_process_claims",{search_text:keywordQuery,match_count:12});
+    if(error){console.warn("Process Memory keyword search failed:",error.message);return [] as ProcessClaim[];}
+    return (data ?? []) as ProcessClaim[];
+  })();
+
+  const vectorPromise=(async()=>{
+    try{
+      const vec=await embedQuery(searchBasis);
+      const {data,error}=await supabase.rpc("match_thinktank_process_claims",{query_embedding:vec,match_count:12});
+      if(error){console.warn("Process Memory vector search failed:",error.message);return [] as ProcessClaim[];}
+      return (data ?? []) as ProcessClaim[];
+    }catch(e){
+      console.warn("Process Memory vector search failed:",(e as Error).message);
+      return [] as ProcessClaim[];
+    }
+  })();
+
+  const [keyword,vector]=await Promise.all([keywordPromise,vectorPromise]);
+  const merged=new Map<string,{claim:ProcessClaim;score:number}>();
+  const add=(rows:ProcessClaim[])=>rows.forEach((row,index)=>{
+    const score=1/(60+index+1);
+    const prev=merged.get(row.id);
+    if(prev) prev.score+=score;
+    else merged.set(row.id,{claim:row,score});
+  });
+  add(keyword); add(vector);
+  const claims=[...merged.values()].sort((a,b)=>b.score-a.score).slice(0,12).map(x=>x.claim);
+
+  const sections=claims.map((claim,index)=>
+    `[CURRENT PROCESS MEMORY ${index+1} | ${claim.authority} | confidence ${Number(claim.confidence || 0).toFixed(2)} | scope ${JSON.stringify(claim.scope || {})}]\n${claim.statement}`
+  );
+  return {
+    claims,
+    context:sections.length
+      ? `CURRENT PROCESS MEMORY\nThis is Think Tank's current best structured understanding of the operation, reconciled from documents and confirmed real-world corrections. Prefer these active claims over older raw document wording when they conflict. Preserve scope such as facility/system/channel. Do not treat inferred or lower-confidence claims as stronger than confirmed operational or authoritative claims.\n\n${sections.join("\n\n---\n\n")}`
+      : ""
+  };
+}
+
 async function getKnowledgeContext(searchBasis: string, mode: KnowledgeMode = "hybrid") {
+  const processMemoryPromise = getProcessMemoryContext(searchBasis);
   const keywordQuery = buildSearchText(searchBasis);
   const wantKeyword = mode === "hybrid" || mode === "keyword";
   const wantVector = mode === "hybrid" || mode === "vector";
@@ -188,11 +252,15 @@ async function getKnowledgeContext(searchBasis: string, mode: KnowledgeMode = "h
     vector_count: vectorChunks.length,
   };
 
+  const processMemory = await processMemoryPromise;
+  const libraryContext = sections.length
+    ? `KNOWLEDGE LIBRARY EXCERPTS\nThe following excerpts were retrieved from Dylan's persistent uploaded library. Use only what is relevant. These are source evidence and may include older or superseded wording; Current Process Memory above represents the reconciled operational view when available.\n\n[retrieval: ${JSON.stringify(retrieval)}]\n\n${sections.join("\n\n---\n\n")}`
+    : "";
+
   return {
-    context: sections.length
-      ? `KNOWLEDGE LIBRARY EXCERPTS\nThe following excerpts were retrieved from Dylan's persistent uploaded library. Use only what is relevant.\n\n[retrieval: ${JSON.stringify(retrieval)}]\n\n${sections.join("\n\n---\n\n")}`
-      : "",
+    context: [processMemory.context, libraryContext].filter(Boolean).join("\n\n=====\n\n"),
     chunks: used,
+    processClaims: processMemory.claims,
     retrieval,
   };
 }
