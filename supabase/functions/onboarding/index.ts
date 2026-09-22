@@ -107,7 +107,21 @@ async function getStatus(){
     if(error) throw error;
     nextGap=data;
   }
-  return {session,counts:c,nextGap};
+
+  const [docsRes,sourcesRes]=await Promise.all([
+    supabase.from("thinktank_documents")
+      .select("id,name,status,chunk_count,size_bytes,created_at")
+      .eq("status","ready").order("created_at",{ascending:false}).limit(500),
+    supabase.from("thinktank_knowledge_sources")
+      .select("document_id,document_type,authority,scope,effective_date,version_label,extraction_status,summary,metadata,analyzed_at")
+      .order("updated_at",{ascending:false}).limit(500),
+  ]);
+  if(docsRes.error) throw docsRes.error;
+  if(sourcesRes.error) throw sourcesRes.error;
+  const sourceMap=new Map((sourcesRes.data ?? []).map((s:any)=>[s.document_id,s]));
+  const documents=(docsRes.data ?? []).map((d:any)=>({...d,process_memory:sourceMap.get(d.id) || null}));
+
+  return {session,counts:c,nextGap,documents};
 }
 
 async function startSession(body:any){
