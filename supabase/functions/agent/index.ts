@@ -6,6 +6,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const secretKeysRaw = Deno.env.get("SUPABASE_SECRET_KEYS");
 const ADMIN_KEY = secretKeysRaw ? JSON.parse(secretKeysRaw)["default"] : Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const TOOLS_URL = `${SUPABASE_URL}/functions/v1/tools`;
+const PROCESS_MEMORY_URL = `${SUPABASE_URL}/functions/v1/process-memory`;
 const GPT_MODEL = "gpt-5.2";
 const ALLOWED_ORIGIN = "https://dcastle02-blip.github.io";
 const MAX_ACTIONS_PER_RUN = 4;
@@ -59,6 +60,14 @@ const LOCAL_TOOLS = [
       result:{type:"string"},
       verification:{type:"array",items:{type:"string"}}
     },required:["result","verification"],additionalProperties:false}
+  },
+  {
+    name:"process_memory_correct",
+    description:"Save an explicit durable real-world operational correction from Dylan into Process Memory. Use only when Dylan is correcting factual process/system/physical-operation knowledge, not for ordinary task preferences, formatting requests, hypotheses, or temporary instructions.",
+    parameters:{type:"object",properties:{
+      text:{type:"string"},
+      scope:{type:"object",additionalProperties:{type:"string"}}
+    },required:["text"],additionalProperties:false}
   }
 ];
 
@@ -220,6 +229,27 @@ async function captureCortexExperience(task:any, outcome:"success"|"partial"|"fa
   return {experienceId:experience.id,proposedRuleId,created:true};
 }
 
+async function processMemoryCorrect(task:any,args:any){
+  const text=String(args?.text || "").trim();
+  if(!text) throw new Error("process_memory_correct requires text");
+  const res=await fetch(PROCESS_MEMORY_URL,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-relay-secret":RELAY_SECRET},
+    body:JSON.stringify({
+      action:"add_correction",
+      text,
+      scope:args?.scope && typeof args.scope==="object" ? args.scope : {},
+      sourceType:"conversation",
+      sourceRef:`Agent task ${task.id}`
+    }),
+  });
+  const raw=await res.text();
+  let data:any={};
+  try{data=raw?JSON.parse(raw):{}}catch{}
+  if(!res.ok) throw new Error(data?.error || `Process Memory HTTP ${res.status}`);
+  return data;
+}
+
 async function broker(toolName: string, args: Record<string, unknown>) {
   const res = await fetch(TOOLS_URL, {
     method:"POST",
@@ -273,7 +303,7 @@ ${compact(task.working_state || {},6000)}
 RECENT STEPS
 ${history || "(none)"}
 
-IMPORTANT: Any recent step from Dylan with kind=message is live user guidance for this same task. Treat the newest Dylan message as higher priority than older task assumptions unless it conflicts with safety or tool permissions. Do not restart the task; adjust the current plan and continue.
+IMPORTANT: Any recent step from Dylan with kind=message is live user guidance for this same task. Treat the newest Dylan message as higher priority than older task assumptions unless it conflicts with safety or tool permissions. Do not restart the task; adjust the current plan and continue. If Dylan explicitly corrects a durable fact about a process, system behavior, facility customization, or physical operation, use process_memory_correct so the correction persists beyond this task. Never use that tool for formatting requests, preferences, guesses, or temporary instructions.
 
 ${formatCortexContext(cortex)}
 
@@ -426,7 +456,11 @@ async function runTask(taskId: string) {
 
       let toolResult:any;
       try {
-        toolResult = await broker(name,args);
+        if (name === "process_memory_correct") {
+          toolResult = {status:"succeeded",result:await processMemoryCorrect(task,args)};
+        } else {
+          toolResult = await broker(name,args);
+        }
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         await recordStep(task,"GPT","tool","failed",`${name} failed`,{arguments:args,error});
