@@ -195,7 +195,7 @@
 
   function validateImportedTranscript(value) {
     if (!Array.isArray(value) || !value.length) throw new Error("This file does not contain a conversation transcript.");
-    const allowed = new Set(["Dylan", "GPT", "Claude", "Consensus"]);
+    const allowed = new Set(["Dylan", "GPT", "Claude", "Agent", "Consensus"]);
     const turns = value
       .filter(t => t && allowed.has(String(t.speaker)) && typeof t.text === "string")
       .map(t => ({ speaker: t.speaker, text: t.text }));
