@@ -43,7 +43,7 @@
   const onboardBtn = document.createElement("button");
   onboardBtn.id = "onboardingBtn";
   onboardBtn.className = "btn";
-  onboardBtn.textContent = "Onboard";
+  onboardBtn.textContent = "Knowledge";
   if (headerActions) headerActions.insertBefore(onboardBtn, document.getElementById("agentBtn") || document.getElementById("libraryBtn"));
 
   const overlay = document.createElement("div");
@@ -53,8 +53,8 @@
     <div class="onboard-shell">
       <div class="onboard-header">
         <div>
-          <div class="onboard-title">Knowledge Onboarding</div>
-          <div class="onboard-sub">Teach Think Tank the operation from a curated library. It builds Process Memory, identifies gaps, and asks for specific SOPs or real-world clarification one item at a time.</div>
+          <div class="onboard-title">Process Knowledge</div>
+          <div class="onboard-sub">Review and teach Think Tank the operation. Process Memory holds the current reconciled truth, while source files remain evidence. Open gaps stay explicit until they are resolved.</div>
         </div>
         <div class="onboard-actions" style="margin-top:0">
           <button class="btn small-btn" id="refreshOnboardingBtn">Refresh</button>
