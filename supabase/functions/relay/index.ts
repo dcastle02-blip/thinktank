@@ -55,6 +55,8 @@ Do not merely summarize the conversation. Give exactly one useful contribution a
 
 type Speaker = "Dylan" | "GPT" | "Claude" | "Consensus";
 type AiSpeaker = "GPT" | "Claude";
+type RouteMode = "auto" | "single" | "both" | "debate";
+type RouteRequest = { mode?: RouteMode; order?: AiSpeaker[] };
 type Attachment = { name: string; type?: string; size?: number; text: string };
 type Turn = { speaker: Speaker; text: string; attachments?: Attachment[] };
 type KnowledgeChunk = { document_id: string; document_name: string; chunk_index: number; content: string; rank?: number; similarity?: number };
@@ -68,6 +70,27 @@ type FinalizationState = {
 };
 
 function otherSpeaker(speaker: AiSpeaker): AiSpeaker { return speaker === "GPT" ? "Claude" : "GPT"; }
+function normalizeRoute(value: unknown, fallback: AiSpeaker, defaultCount = 2): AiSpeaker[] {
+  if (!value || typeof value !== "object") {
+    return defaultCount > 1 ? [fallback, otherSpeaker(fallback)] : [fallback];
+  }
+  const raw = value as Record<string, unknown>;
+  const mode: RouteMode = raw.mode === "single" || raw.mode === "both" || raw.mode === "debate" ? raw.mode : "auto";
+  const order = Array.isArray(raw.order)
+    ? raw.order.filter((speaker): speaker is AiSpeaker => speaker === "GPT" || speaker === "Claude").slice(0, 3)
+    : [];
+  if (mode === "auto") return defaultCount > 1 ? [fallback, otherSpeaker(fallback)] : [fallback];
+  if (mode === "single") return [order[0] || fallback];
+  if (mode === "both") {
+    const first = order[0] || fallback;
+    const second = order[1] || otherSpeaker(first);
+    return [first, second];
+  }
+  const first = order[0] || fallback;
+  const second = order[1] || otherSpeaker(first);
+  const third = order[2] || first;
+  return [first, second, third];
+}
 function formatAttachmentContext(attachments?: Attachment[]) {
   if (!attachments?.length) return "";
   return attachments.map((file, index) => `\n\n[ATTACHED FILE ${index + 1}: ${file.name}]\n${file.text}\n[END ATTACHED FILE: ${file.name}]`).join("");
@@ -571,14 +594,17 @@ Deno.serve(async (req) => {
       if (!message && attachments.length === 0) return json({ error: "message is required" }, 400);
       const working: Turn[] = [...transcript, { speaker: "Dylan", text: message || "Please review the attached file(s).", attachments: attachments.length ? attachments : undefined }];
       const knowledge = await getKnowledgeContext(recentSearchBasis(working, message));
-      let gptTokens = 0, claudeTokens = 0, speaker = requestedSpeaker;
+      let gptTokens = 0, claudeTokens = 0;
       let providerNotice = "";
-      for (let i = 0; i < 2; i++) {
+      const plannedRoute = normalizeRoute(body.route, requestedSpeaker, 2);
+      const actualRoute: AiSpeaker[] = [];
+      for (const plannedSpeaker of plannedRoute) {
+        const speaker = plannedSpeaker;
         try {
           const result = await callModel(speaker, working, "", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
           working.push({ speaker, text: result.text });
+          actualRoute.push(speaker);
           if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
-          speaker = otherSpeaker(speaker);
         } catch (err) {
           if (speaker !== "Claude" || !isClaudeUnavailableError(err)) throw err;
           providerNotice = CLAUDE_FALLBACK_NOTICE;
@@ -586,26 +612,30 @@ Deno.serve(async (req) => {
           if (!alreadyHasFreshGpt) {
             const fallback = await callGPT(working, "Claude is temporarily unavailable because its API usage limit was reached. Make the single most useful contribution yourself; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
             working.push({ speaker: "GPT", text: fallback.text });
+            actualRoute.push("GPT");
             gptTokens += fallback.tokens;
           }
-          speaker = "GPT";
           break;
         }
       }
-      return json({ transcript: working, nextSpeaker: speaker, providerNotice, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }, usage: { gptTokens, claudeTokens, roundTokens: gptTokens + claudeTokens } });
+      const lastActual = actualRoute[actualRoute.length - 1] || requestedSpeaker;
+      const nextSpeaker = providerNotice ? "GPT" : otherSpeaker(lastActual);
+      return json({ transcript: working, nextSpeaker, providerNotice, route: { requested: plannedRoute, actual: actualRoute }, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }, usage: { gptTokens, claudeTokens, roundTokens: gptTokens + claudeTokens } });
     }
 
     if (action === "next") {
       if (!transcript.length) return json({ error: "start a conversation before requesting the next response" }, 400);
       const knowledge = await getKnowledgeContext(recentSearchBasis(transcript));
       const instruction = "Continue the discussion from the exact point it currently stands. Do not pretend Dylan spoke again. Make the most useful next contribution. You may extend a sound idea, add missing analysis, correct a material issue, reframe the problem, or briefly confirm something that is already right. Do not manufacture disagreement or repeat points that are already settled.";
-      let actualSpeaker = requestedSpeaker;
+      const nextRoute = normalizeRoute(body.route, requestedSpeaker, 1);
+      const selectedSpeaker = nextRoute[0] || requestedSpeaker;
+      let actualSpeaker = selectedSpeaker;
       let providerNotice = "";
       let result;
       try {
-        result = await callModel(requestedSpeaker, transcript, instruction, MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
+        result = await callModel(selectedSpeaker, transcript, instruction, MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
       } catch (err) {
-        if (requestedSpeaker !== "Claude" || !isClaudeUnavailableError(err)) throw err;
+        if (selectedSpeaker !== "Claude" || !isClaudeUnavailableError(err)) throw err;
         providerNotice = CLAUDE_FALLBACK_NOTICE;
         actualSpeaker = "GPT";
         result = await callGPT(transcript, instruction + "\n\nClaude is temporarily unavailable due to its API usage limit. Continue as GPT only; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
@@ -613,7 +643,7 @@ Deno.serve(async (req) => {
       const working = [...transcript, { speaker: actualSpeaker, text: result.text } as Turn];
       const gptTokens = actualSpeaker === "GPT" ? result.tokens : 0;
       const claudeTokens = actualSpeaker === "Claude" ? result.tokens : 0;
-      return json({ transcript: working, nextSpeaker: providerNotice ? "GPT" : otherSpeaker(actualSpeaker), providerNotice, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }, usage: { gptTokens, claudeTokens, roundTokens: result.tokens } });
+      return json({ transcript: working, nextSpeaker: providerNotice ? "GPT" : otherSpeaker(actualSpeaker), providerNotice, route: { requested: nextRoute, actual: [actualSpeaker] }, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }, usage: { gptTokens, claudeTokens, roundTokens: result.tokens } });
     }
 
     if (action === "finalize_step" || action === "finalize") {
