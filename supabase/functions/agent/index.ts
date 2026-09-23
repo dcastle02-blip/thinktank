@@ -523,9 +523,11 @@ Deno.serve(async (req) => {
       if (!goal) return json({error:"goal is required"},400);
       const title = String(body.title || goal.slice(0,80)).trim().slice(0,120);
       const maxSteps = Math.max(1,Math.min(100,Number(body.maxSteps || 60)));
-      const { data:task, error } = await supabase.from("thinktank_agent_tasks").insert({title,goal,max_steps:maxSteps,status:"queued"}).select().single();
+      const chatContext = String(body.context || "").trim().slice(-12000);
+      const workingState = chatContext ? {chat_context:chatContext,source:"chat"} : {};
+      const { data:task, error } = await supabase.from("thinktank_agent_tasks").insert({title,goal,max_steps:maxSteps,status:"queued",working_state:workingState}).select().single();
       if (error) throw error;
-      await recordStep(task,"System","system","succeeded","Task created",{goal});
+      await recordStep(task,"System","system","succeeded","Task created",{goal,source:chatContext ? "chat" : "agent"});
       const finalTask = body.autoRun === false ? await loadTask(task.id) : await runTask(task.id);
       return json({task:finalTask});
     }
@@ -572,8 +574,10 @@ Deno.serve(async (req) => {
       }
 
       await recordStep(task,"Dylan","message","succeeded",message,{source:"task_composer"});
+      const chatContext = String(body.context || "").trim().slice(-12000);
       const state = {
         ...(task.working_state || {}),
+        ...(chatContext ? {chat_context:chatContext,source:"chat"} : {}),
         latest_user_guidance:message,
         latest_user_guidance_at:new Date().toISOString(),
         awaiting_user:false,
