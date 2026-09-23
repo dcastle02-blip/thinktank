@@ -89,6 +89,7 @@
   agentBtn.id = "agentBtn";
   agentBtn.className = "btn";
   agentBtn.textContent = "Agent";
+  agentBtn.style.display = "none";
   if (headerActions) headerActions.insertBefore(agentBtn, document.getElementById("toolsBtn") || document.getElementById("libraryBtn"));
 
   const overlay = document.createElement("div");
