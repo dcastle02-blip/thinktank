@@ -182,12 +182,12 @@ async function getProcessMemoryContext(searchBasis:string){
     .from("thinktank_process_claims")
     .select("id",{head:true,count:"exact"})
     .eq("status","active");
-  if(countError || !count) return {context:"",claims:[] as ProcessClaim[]};
+  if(countError || !count) return {context:"",claims:[] as ProcessClaim[],gaps:[] as any[]};
 
   const keywordQuery=buildSearchText(searchBasis);
   const keywordPromise=(async()=>{
     if(!keywordQuery) return [] as ProcessClaim[];
-    const {data,error}=await supabase.rpc("search_thinktank_process_claims",{search_text:keywordQuery,match_count:12});
+    const {data,error}=await supabase.rpc("search_thinktank_process_claims",{search_text:keywordQuery,match_count:16});
     if(error){console.warn("Process Memory keyword search failed:",error.message);return [] as ProcessClaim[];}
     return (data ?? []) as ProcessClaim[];
   })();
@@ -195,7 +195,7 @@ async function getProcessMemoryContext(searchBasis:string){
   const vectorPromise=(async()=>{
     try{
       const vec=await embedQuery(searchBasis);
-      const {data,error}=await supabase.rpc("match_thinktank_process_claims",{query_embedding:vec,match_count:12});
+      const {data,error}=await supabase.rpc("match_thinktank_process_claims",{query_embedding:vec,match_count:16});
       if(error){console.warn("Process Memory vector search failed:",error.message);return [] as ProcessClaim[];}
       return (data ?? []) as ProcessClaim[];
     }catch(e){
@@ -204,7 +204,18 @@ async function getProcessMemoryContext(searchBasis:string){
     }
   })();
 
-  const [keyword,vector]=await Promise.all([keywordPromise,vectorPromise]);
+  const gapsPromise=(async()=>{
+    const {data,error}=await supabase
+      .from("thinktank_onboarding_gaps")
+      .select("gap_key,category,title,question,why_it_matters,scope,priority")
+      .eq("status","open")
+      .order("priority",{ascending:false})
+      .limit(20);
+    if(error){console.warn("Knowledge Gap retrieval failed:",error.message);return [] as any[];}
+    return data ?? [];
+  })();
+
+  const [keyword,vector,openGaps]=await Promise.all([keywordPromise,vectorPromise,gapsPromise]);
   const merged=new Map<string,{claim:ProcessClaim;score:number}>();
   const add=(rows:ProcessClaim[])=>rows.forEach((row,index)=>{
     const score=1/(60+index+1);
@@ -213,19 +224,45 @@ async function getProcessMemoryContext(searchBasis:string){
     else merged.set(row.id,{claim:row,score});
   });
   add(keyword); add(vector);
-  const claims=[...merged.values()].sort((a,b)=>b.score-a.score).slice(0,12).map(x=>x.claim);
+  const claims=[...merged.values()].sort((a,b)=>b.score-a.score).slice(0,16).map(x=>x.claim);
 
-  const sections=claims.map((claim,index)=>
-    `[CURRENT PROCESS MEMORY ${index+1} | ${claim.authority} | confidence ${Number(claim.confidence || 0).toFixed(2)} | scope ${JSON.stringify(claim.scope || {})}]\n${claim.statement}`
-  );
-  return {
-    claims,
-    context:sections.length
-      ? `CURRENT PROCESS MEMORY\nThis is Think Tank's current best structured understanding of the operation, reconciled from documents and confirmed real-world corrections. Prefer these active claims over older raw document wording when they conflict. Preserve scope such as facility/system/channel. Do not treat inferred or lower-confidence claims as stronger than confirmed operational or authoritative claims.\n\n${sections.join("\n\n---\n\n")}`
-      : ""
-  };
+  const terms=(searchBasis.toLowerCase().match(/[a-z0-9_]{3,}/g) ?? []).filter((word)=>!STOPWORDS.has(word));
+  const gaps=openGaps.filter((gap:any)=>{
+    const hay=[gap.gap_key,gap.title,gap.question,gap.why_it_matters || "",JSON.stringify(gap.scope || {})].join(" ").toLowerCase();
+    return terms.some((term)=>hay.includes(term));
+  }).slice(0,8);
+
+  const confirmed=claims.filter((claim)=>claim.authority==="confirmed_operational");
+  const documented=claims.filter((claim)=>claim.authority!=="confirmed_operational");
+  const render=(rows:ProcessClaim[],label:string)=>rows.map((claim,index)=>
+    `[${label} ${index+1} | key ${claim.claim_key} | confidence ${Number(claim.confidence || 0).toFixed(2)} | scope ${JSON.stringify(claim.scope || {})}]\n${claim.statement}`
+  ).join("\n\n---\n\n");
+  const gapText=gaps.map((gap:any,index:number)=>
+    `[OPEN GAP ${index+1} | key ${gap.gap_key} | priority ${gap.priority} | scope ${JSON.stringify(gap.scope || {})}]\n${gap.title}: ${gap.question}${gap.why_it_matters ? `\nWhy it matters: ${gap.why_it_matters}` : ""}`
+  ).join("\n\n---\n\n");
+
+  const rules=`OPERATIONAL KNOWLEDGE AUTHORITY
+For current operational questions, use this strict hierarchy:
+1. ACTIVE CONFIRMED OPERATIONAL TRUTH is highest authority.
+2. ACTIVE DOCUMENTED SYSTEM BEHAVIOR is secondary.
+3. OPEN KNOWLEDGE GAPS explicitly define what is not established.
+4. Raw Knowledge Library excerpts are evidence only and may be historical, design intent, or superseded.
+5. Model inference is never operational truth and cannot override Process Memory.
+
+Before answering, check the user's factual premises against active Process Memory. If a premise conflicts with confirmed operational truth, correct it explicitly rather than adopting it.
+
+Do not infer ownership of a downstream process merely because a system initiates an upstream event, sends a message, stores a record, or is the system of record. Distinguish decision owner, orchestration owner, system of record, message sender/receiver, physical execution system, and final-state owner when supported.
+
+If an exact trigger, message, relationship, owner, or handoff is an OPEN KNOWLEDGE GAP, state that it is not yet established. Do not fill the gap from adjacent behavior or a plausible architecture pattern.
+
+Before returning an operational answer, silently classify each material claim as confirmed Process Memory, documented behavior, open gap, or inference. Remove unsupported inference or label it explicitly. Never blend conflicting confirmed and documentary statements into a compromise.`;
+
+  const blocks=[rules];
+  if(confirmed.length) blocks.push(`ACTIVE CONFIRMED OPERATIONAL TRUTH\n${render(confirmed,"CONFIRMED")}`);
+  if(documented.length) blocks.push(`ACTIVE DOCUMENTED SYSTEM BEHAVIOR\n${render(documented,"DOCUMENTED")}`);
+  if(gapText) blocks.push(`OPEN KNOWLEDGE GAPS\n${gapText}`);
+  return {claims,gaps,context:blocks.join("\n\n=====\n\n")};
 }
-
 async function getKnowledgeContext(searchBasis: string, mode: KnowledgeMode = "hybrid") {
   const processMemoryPromise = getProcessMemoryContext(searchBasis);
   const keywordQuery = buildSearchText(searchBasis);
@@ -284,6 +321,7 @@ async function getKnowledgeContext(searchBasis: string, mode: KnowledgeMode = "h
     context: [processMemory.context, libraryContext].filter(Boolean).join("\n\n=====\n\n"),
     chunks: used,
     processClaims: processMemory.claims,
+    processGaps: processMemory.gaps,
     retrieval,
   };
 }
