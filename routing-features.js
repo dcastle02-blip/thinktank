@@ -92,7 +92,9 @@
   document.body.appendChild(overlay);
 
   function routePayload() {
-    return structuredClone ? structuredClone(ROUTES[selectedRoute].payload) : JSON.parse(JSON.stringify(ROUTES[selectedRoute].payload));
+    return typeof structuredClone === "function"
+      ? structuredClone(ROUTES[selectedRoute].payload)
+      : JSON.parse(JSON.stringify(ROUTES[selectedRoute].payload));
   }
 
   function renderRouteControl() {
