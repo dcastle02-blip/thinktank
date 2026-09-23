@@ -53,7 +53,7 @@ When KNOWLEDGE LIBRARY excerpts are supplied, treat them as source material from
 
 Do not merely summarize the conversation. Give exactly one useful contribution as yourself, then stop. The relay controls who speaks next.`;
 
-type Speaker = "Dylan" | "GPT" | "Claude" | "Consensus";
+type Speaker = "Dylan" | "GPT" | "Claude" | "Agent" | "Consensus";
 type AiSpeaker = "GPT" | "Claude";
 type RouteMode = "auto" | "single" | "both" | "debate";
 type RouteRequest = { mode?: RouteMode; order?: AiSpeaker[] };
@@ -481,7 +481,7 @@ const CLAUDE_FALLBACK_NOTICE = "Claude API usage limit reached. Think Tank conti
 
 function normalizeTranscript(value: unknown): Turn[] {
   if (!Array.isArray(value)) return [];
-  const allowed = new Set<Speaker>(["Dylan", "GPT", "Claude", "Consensus"]);
+  const allowed = new Set<Speaker>(["Dylan", "GPT", "Claude", "Agent", "Consensus"]);
   return value.filter((turn) => turn && typeof turn === "object").map((turn) => turn as Record<string, unknown>)
     .filter((turn) => allowed.has(turn.speaker as Speaker) && typeof turn.text === "string")
     .map((turn) => ({
