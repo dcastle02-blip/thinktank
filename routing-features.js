@@ -334,9 +334,13 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     const text = document.getElementById("question")?.value?.trim() || "";
-    if (!text || busy) return;
+    if ((!text && !pendingChatAttachments.length) || busy) return;
 
     if (selectedRoute === "agent") {
+      if (pendingChatAttachments.length) {
+        document.getElementById("status").textContent = "Chat attachments are available with GPT and Claude. Choose an AI route to send these files.";
+        return;
+      }
       await runAgentMessage(text);
       await refreshKnowledgeState();
       return;
@@ -344,11 +348,13 @@
 
     const route = routePayload();
     const data = await callRelay(
-      { action: "message", message: text, transcript, nextSpeaker, route },
+      { action: "message", message: text, attachments: pendingChatAttachments, transcript, nextSpeaker, route },
       `${ROUTES[selectedRoute].label} is responding…`
     );
     if (data) {
       document.getElementById("question").value = "";
+      pendingChatAttachments = [];
+      renderChatAttachmentSummary();
       if (data?.providerNotice) document.getElementById("status").textContent = data.providerNotice;
       else if (!data?.knowledge?.chunksUsed) document.getElementById("status").textContent = `${ROUTES[selectedRoute].label} responded. No matching library section was needed/found.`;
       else document.getElementById("status").textContent = `${ROUTES[selectedRoute].label} responded using ${data.knowledge.chunksUsed} library section(s).`;
