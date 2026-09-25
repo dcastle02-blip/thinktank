@@ -53,6 +53,8 @@ When KNOWLEDGE LIBRARY excerpts are supplied, treat them as source material from
 
 Do not merely summarize the conversation. Give exactly one useful contribution as yourself, then stop. The relay controls who speaks next.`;
 
+const DEMO_CHARTER = `You are one participant in a casual conversation with a user and another AI. Respond only as yourself. Build on useful points, disagree when the evidence warrants it, and explain uncertainty plainly. Use only the messages in this conversation. Do not claim access to saved files, private context, databases, or tools. Answer in a natural conversational style suited to the user's question.`;
+
 type Speaker = "Dylan" | "GPT" | "Claude" | "Agent" | "Consensus";
 type AiSpeaker = "GPT" | "Claude";
 type RouteMode = "auto" | "single" | "both" | "debate";
@@ -429,10 +431,10 @@ async function executeBrokerTool(speaker: AiSpeaker, toolName: string, args: Rec
   }
 }
 
-async function callGPT(transcript: Turn[], instruction = "", maxTokens = MAX_DEBATE_OUTPUT_TOKENS, knowledgeContext = "", toolMode: ToolMode = "all") {
+async function callGPT(transcript: Turn[], instruction = "", maxTokens = MAX_DEBATE_OUTPUT_TOKENS, knowledgeContext = "", toolMode: ToolMode = "all", charter = CHARTER) {
   const defs = openAiToolDefs(toolMode);
   const guidance = toolGuidance(toolMode);
-  const system = `${CHARTER}\n\nYou are GPT.${instruction ? `\n\n${instruction}` : ""}${guidance ? `\n\n${guidance}` : ""}${knowledgeContext ? `\n\n${knowledgeContext}` : ""}`;
+  const system = `${charter}\n\nYou are GPT.${instruction ? `\n\n${instruction}` : ""}${guidance ? `\n\n${guidance}` : ""}${knowledgeContext ? `\n\n${knowledgeContext}` : ""}`;
   const messages: any[] = [{ role: "system", content: system }, ...toMessages(transcript, "GPT")];
   let tokens = 0;
 
@@ -466,11 +468,11 @@ async function callGPT(transcript: Turn[], instruction = "", maxTokens = MAX_DEB
   throw new Error("OpenAI exceeded the Think Tank tool-step limit.");
 }
 
-async function callClaude(transcript: Turn[], instruction = "", maxTokens = MAX_DEBATE_OUTPUT_TOKENS, knowledgeContext = "", toolMode: ToolMode = "all") {
+async function callClaude(transcript: Turn[], instruction = "", maxTokens = MAX_DEBATE_OUTPUT_TOKENS, knowledgeContext = "", toolMode: ToolMode = "all", charter = CHARTER) {
   const defs = claudeToolDefs(toolMode);
   const guidance = toolGuidance(toolMode);
   const messages: any[] = [...toMessages(transcript, "Claude")];
-  const system = `${CHARTER}\n\nYou are Claude.${instruction ? `\n\n${instruction}` : ""}${guidance ? `\n\n${guidance}` : ""}${knowledgeContext ? `\n\n${knowledgeContext}` : ""}`;
+  const system = `${charter}\n\nYou are Claude.${instruction ? `\n\n${instruction}` : ""}${guidance ? `\n\n${guidance}` : ""}${knowledgeContext ? `\n\n${knowledgeContext}` : ""}`;
   let tokens = 0;
 
   for (let step = 0; step <= MAX_TOOL_STEPS_PER_MODEL; step++) {
@@ -515,10 +517,10 @@ async function callClaude(transcript: Turn[], instruction = "", maxTokens = MAX_
   throw new Error("Anthropic exceeded the Think Tank tool-step limit.");
 }
 
-async function callModel(speaker: AiSpeaker, transcript: Turn[], instruction = "", maxTokens = MAX_DEBATE_OUTPUT_TOKENS, knowledgeContext = "", toolMode: ToolMode = "all") {
+async function callModel(speaker: AiSpeaker, transcript: Turn[], instruction = "", maxTokens = MAX_DEBATE_OUTPUT_TOKENS, knowledgeContext = "", toolMode: ToolMode = "all", charter = CHARTER) {
   return speaker === "GPT"
-    ? callGPT(transcript, instruction, maxTokens, knowledgeContext, toolMode)
-    : callClaude(transcript, instruction, maxTokens, knowledgeContext, toolMode);
+    ? callGPT(transcript, instruction, maxTokens, knowledgeContext, toolMode, charter)
+    : callClaude(transcript, instruction, maxTokens, knowledgeContext, toolMode, charter);
 }
 
 function isClaudeUnavailableError(err: unknown) {
@@ -571,12 +573,17 @@ const draftInstruction = `FINALIZATION MODE.\nCreate the best final output Dylan
 const reviewInstruction = `FINALIZATION REVIEW MODE.\nAct as a quality reviewer, not an adversary. Review the proposed final output against Dylan's actual request, the discussion, and relevant knowledge excerpts. Your job is to catch MATERIAL problems, not to create disagreement. Do not reject because you could phrase it differently, prefer another valid approach, or can imagine an optional enhancement. Do not invent new requirements after earlier issues are fixed. If the candidate is directly usable, faithful to Dylan's request, and has no consequential factual, logical, completeness, source-grounding, execution, or user-intent problem, return AGREE even if you would personally write it differently.\n\nReturn exactly one of these formats:\nAGREE\nor\nREVISE\n- concise blocking change 1\n- concise blocking change 2`;
 const reviseInstruction = `FINALIZATION REVISION MODE.\nRevise the proposed final output to address the other model's MATERIAL blocking review points while preserving Dylan's requested format and all sound content. Do not make changes merely to appease the reviewer when its objection is optional, stylistic, or contrary to Dylan's request or supplied evidence. The goal is a correct, useful final answer, not agreement for its own sake. Produce only the revised final output.`;
 
-async function finalizeStep(baseTranscript: Turn[], requestedSpeaker: AiSpeaker, rawState: unknown, knowledgeContext: string) {
+async function finalizeStep(baseTranscript: Turn[], requestedSpeaker: AiSpeaker, rawState: unknown, knowledgeContext: string, demo = false) {
   const state = normalizeFinalizationState(rawState);
+  const mode: ToolMode = demo ? "none" : "read_only";
+  const charter = demo ? DEMO_CHARTER : CHARTER;
+  const draftPrompt = demo ? "Write a clear final answer to the user based only on this chat. Keep the tone natural and fit the question. Output only the answer." : draftInstruction;
+  const reviewPrompt = demo ? "Review the proposed final answer against this chat. Reply AGREE if it is useful and faithful, or REVISE followed by only material issues." : reviewInstruction;
+  const revisePrompt = demo ? "Revise the final answer to address material review issues. Output only the revised answer." : reviseInstruction;
   if (!state) {
     const drafter = requestedSpeaker;
     const reviewer = otherSpeaker(drafter);
-    const draft = await callModel(drafter, baseTranscript, draftInstruction, MAX_FINAL_OUTPUT_TOKENS, knowledgeContext, "read_only");
+    const draft = await callModel(drafter, baseTranscript, draftPrompt, MAX_FINAL_OUTPUT_TOKENS, knowledgeContext, mode, charter);
     const nextState: FinalizationState = { stage: "review", cycle: 0, drafter, reviewer, proposed: draft.text };
     return {
       transcript: baseTranscript,
@@ -588,7 +595,7 @@ async function finalizeStep(baseTranscript: Turn[], requestedSpeaker: AiSpeaker,
 
   if (state.stage === "review") {
     const working: Turn[] = [...baseTranscript, { speaker: state.drafter, text: `[PROPOSED FINAL OUTPUT]\n${state.proposed}` }];
-    const review = await callModel(state.reviewer, working, reviewInstruction, MAX_REVIEW_OUTPUT_TOKENS, knowledgeContext, "read_only");
+    const review = await callModel(state.reviewer, working, reviewPrompt, MAX_REVIEW_OUTPUT_TOKENS, knowledgeContext, mode, charter);
     const usage = { gptTokens: state.reviewer === "GPT" ? review.tokens : 0, claudeTokens: state.reviewer === "Claude" ? review.tokens : 0, roundTokens: review.tokens };
     if (reviewAgrees(review.text)) {
       return {
@@ -615,7 +622,7 @@ async function finalizeStep(baseTranscript: Turn[], requestedSpeaker: AiSpeaker,
     { speaker: state.drafter, text: `[PROPOSED FINAL OUTPUT]\n${state.proposed}` },
     { speaker: state.reviewer, text: `[FINAL REVIEW]\n${state.reviewText}` },
   ];
-  const revision = await callModel(state.drafter, working, reviseInstruction, MAX_FINAL_OUTPUT_TOKENS, knowledgeContext, "read_only");
+  const revision = await callModel(state.drafter, working, revisePrompt, MAX_FINAL_OUTPUT_TOKENS, knowledgeContext, mode, charter);
   const nextState: FinalizationState = { stage: "review", cycle: state.cycle + 1, drafter: state.drafter, reviewer: state.reviewer, proposed: revision.text };
   return {
     transcript: baseTranscript,
@@ -637,9 +644,13 @@ Deno.serve(async (req) => {
     if (transcript.length > MAX_TRANSCRIPT_TURNS) return json({ error: `transcript exceeds ${MAX_TRANSCRIPT_TURNS} turns; start a new session` }, 400);
     // Public-facing demo path: no knowledge retrieval, chat attachments, agent, or connected tools.
     if (body.mode === "demo") {
-      if (action !== "message" && action !== "next") return json({ error: "unsupported demo action" }, 400);
+      if (action !== "message" && action !== "next" && action !== "finalize_step") return json({ error: "unsupported demo action" }, 400);
       if (Array.isArray(body.attachments) && body.attachments.length) return json({ error: "demo attachments are disabled" }, 400);
-      if (transcript.some(turn => turn.attachments?.length || !["Dylan", "GPT", "Claude"].includes(turn.speaker))) return json({ error: "demo accepts plain chat turns only" }, 400);
+      if (transcript.some(turn => turn.attachments?.length || !["Dylan", "GPT", "Claude", "Consensus"].includes(turn.speaker))) return json({ error: "demo accepts plain chat turns only" }, 400);
+      if (action === "finalize_step") {
+        if (!transcript.length) return json({ error: "start a conversation first" }, 400);
+        return json(await finalizeStep(transcript, requestedSpeaker, body.finalizationState, "", true));
+      }
       const message = action === "message" && typeof body.message === "string" ? body.message.trim() : "";
       if (action === "message" && !message) return json({ error: "message is required" }, 400);
       if (action === "next" && !transcript.length) return json({ error: "start a conversation first" }, 400);
@@ -649,7 +660,7 @@ Deno.serve(async (req) => {
       for (const speaker of speakers) {
         const result = await callModel(speaker, working,
           "This is a standalone general-purpose demonstration. Use only the visible conversation. Speak for yourself, and do not imply access to personal files, stored knowledge, or tools.",
-          MAX_DEBATE_OUTPUT_TOKENS, "", "none");
+          MAX_DEBATE_OUTPUT_TOKENS, "", "none", DEMO_CHARTER);
         working.push({ speaker, text: result.text });
         if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
       }
