@@ -635,6 +635,27 @@ Deno.serve(async (req) => {
     const transcript = normalizeTranscript(body.transcript);
     const requestedSpeaker: AiSpeaker = body.nextSpeaker === "Claude" || body.firstSpeaker === "Claude" ? "Claude" : "GPT";
     if (transcript.length > MAX_TRANSCRIPT_TURNS) return json({ error: `transcript exceeds ${MAX_TRANSCRIPT_TURNS} turns; start a new session` }, 400);
+    // Public-facing demo path: no knowledge retrieval, chat attachments, agent, or connected tools.
+    if (body.mode === "demo") {
+      if (action !== "message" && action !== "next") return json({ error: "unsupported demo action" }, 400);
+      if (Array.isArray(body.attachments) && body.attachments.length) return json({ error: "demo attachments are disabled" }, 400);
+      if (transcript.some(turn => turn.attachments?.length || !["Dylan", "GPT", "Claude"].includes(turn.speaker))) return json({ error: "demo accepts plain chat turns only" }, 400);
+      const message = action === "message" && typeof body.message === "string" ? body.message.trim() : "";
+      if (action === "message" && !message) return json({ error: "message is required" }, 400);
+      if (action === "next" && !transcript.length) return json({ error: "start a conversation first" }, 400);
+      const working: Turn[] = action === "message" ? [...transcript, { speaker: "Dylan", text: message }] : [...transcript];
+      const speakers: AiSpeaker[] = action === "message" ? ["GPT", "Claude"] : [requestedSpeaker];
+      let gptTokens = 0, claudeTokens = 0;
+      for (const speaker of speakers) {
+        const result = await callModel(speaker, working,
+          "This is a standalone general-purpose demonstration. Use only the visible conversation. Speak for yourself, and do not imply access to personal files, stored knowledge, or tools.",
+          MAX_DEBATE_OUTPUT_TOKENS, "", "none");
+        working.push({ speaker, text: result.text });
+        if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
+      }
+      return json({ transcript: working, nextSpeaker: action === "message" ? "GPT" : otherSpeaker(requestedSpeaker), usage: { gptTokens, claudeTokens, roundTokens: gptTokens + claudeTokens } });
+    }
+
 
     if (action === "message") {
       const message = typeof body.message === "string" ? body.message.trim() : "";
