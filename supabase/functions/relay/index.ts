@@ -15,7 +15,7 @@ const MAX_REVIEW_OUTPUT_TOKENS = 1500;
 const MAX_FINAL_REVIEW_CYCLES = 20;
 const MAX_TRANSCRIPT_TURNS = 40;
 const MAX_INLINE_FILES = 3;
-const MAX_INLINE_ATTACHMENT_CHARS = 60_000;
+const MAX_INLINE_ATTACHMENT_CHARS = 1_000_000;
 const MAX_KNOWLEDGE_CHARS = 32_000;
 const ALLOWED_ORIGIN = "https://dcastle02-blip.github.io";
 const TOOLS_URL = `${SUPABASE_URL}/functions/v1/tools`;
@@ -91,13 +91,8 @@ function normalizeRoute(value: unknown, fallback: AiSpeaker, defaultCount = 2): 
   const third = order[2] || first;
   return [first, second, third];
 }
-function formatAttachmentContext(attachments?: Attachment[]) {
-  if (!attachments?.length) return "";
-  return attachments.map((file, index) => `\n\n[ATTACHED FILE ${index + 1}: ${file.name}]\n${file.text}\n[END ATTACHED FILE: ${file.name}]`).join("");
-}
 function turnContent(turn: Turn, me: AiSpeaker) {
-  const text = `${turn.text}${formatAttachmentContext(turn.attachments)}`;
-  return turn.speaker === me ? text : `[${turn.speaker}]: ${text}`;
+  return turn.speaker === me ? turn.text : `[${turn.speaker}]: ${turn.text}`;
 }
 function toMessages(transcript: Turn[], me: AiSpeaker) {
   return transcript.map((turn) => ({ role: turn.speaker === me ? "assistant" : "user", content: turnContent(turn, me) }));
@@ -327,6 +322,21 @@ async function getKnowledgeContext(searchBasis: string, mode: KnowledgeMode = "h
 }
 function recentSearchBasis(transcript: Turn[], extra = "") {
   return [...transcript.slice(-6).map((turn) => turn.text), extra].join("\n").slice(-12_000);
+}
+
+// Attachments live in the chat transcript, never in the global knowledge index.
+// Select bounded, labeled excerpts for every turn, including Next and Finalize.
+function chatAttachmentContext(transcript: Turn[], searchBasis: string) {
+  const files = transcript.flatMap(turn => turn.attachments ?? []);
+  if (!files.length) return "";
+  const terms = [...new Set((searchBasis.toLowerCase().match(/[a-z0-9_]{4,}/g) ?? []).filter(w => !STOPWORDS.has(w)))].slice(-24);
+  const sections = files.flatMap(file => {
+    const chunks = file.text.match(/[\s\S]{1,3500}/g) ?? [];
+    return chunks.map((content, index) => ({ name: file.name, index, content,
+      score: terms.reduce((sum, term) => sum + (content.toLowerCase().includes(term) ? 1 : 0), 0) }));
+  });
+  const selected = sections.sort((a,b) => b.score - a.score || a.index - b.index).slice(0, 8);
+  return `CHAT ATTACHMENTS (only this conversation; excerpts, not complete files):\n${selected.map(s => `[${s.name}, section ${s.index + 1}]\n${s.content}`).join("\n\n")}`;
 }
 
 
@@ -632,6 +642,7 @@ Deno.serve(async (req) => {
       if (!message && attachments.length === 0) return json({ error: "message is required" }, 400);
       const working: Turn[] = [...transcript, { speaker: "Dylan", text: message || "Please review the attached file(s).", attachments: attachments.length ? attachments : undefined }];
       const knowledge = await getKnowledgeContext(recentSearchBasis(working, message));
+      const context = `${knowledge.context}\n\n${chatAttachmentContext(working, recentSearchBasis(working, message))}`;
       let gptTokens = 0, claudeTokens = 0;
       let providerNotice = "";
       const plannedRoute = normalizeRoute(body.route, requestedSpeaker, 2);
@@ -639,7 +650,7 @@ Deno.serve(async (req) => {
       for (const plannedSpeaker of plannedRoute) {
         const speaker = plannedSpeaker;
         try {
-          const result = await callModel(speaker, working, "", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
+          const result = await callModel(speaker, working, "", MAX_DEBATE_OUTPUT_TOKENS, context);
           working.push({ speaker, text: result.text });
           actualRoute.push(speaker);
           if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
@@ -648,7 +659,7 @@ Deno.serve(async (req) => {
           providerNotice = CLAUDE_FALLBACK_NOTICE;
           const alreadyHasFreshGpt = working.length > 0 && working[working.length - 1]?.speaker === "GPT";
           if (!alreadyHasFreshGpt) {
-            const fallback = await callGPT(working, "Claude is temporarily unavailable because its API usage limit was reached. Make the single most useful contribution yourself; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
+            const fallback = await callGPT(working, "Claude is temporarily unavailable because its API usage limit was reached. Make the single most useful contribution yourself; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, context);
             working.push({ speaker: "GPT", text: fallback.text });
             actualRoute.push("GPT");
             gptTokens += fallback.tokens;
@@ -664,6 +675,7 @@ Deno.serve(async (req) => {
     if (action === "next") {
       if (!transcript.length) return json({ error: "start a conversation before requesting the next response" }, 400);
       const knowledge = await getKnowledgeContext(recentSearchBasis(transcript));
+      const context = `${knowledge.context}\n\n${chatAttachmentContext(transcript, recentSearchBasis(transcript))}`;
       const instruction = "Continue the discussion from the exact point it currently stands. Do not pretend Dylan spoke again. Make the most useful next contribution. You may extend a sound idea, add missing analysis, correct a material issue, reframe the problem, or briefly confirm something that is already right. Do not manufacture disagreement or repeat points that are already settled.";
       const nextRoute = normalizeRoute(body.route, requestedSpeaker, 1);
       const selectedSpeaker = nextRoute[0] || requestedSpeaker;
@@ -671,12 +683,12 @@ Deno.serve(async (req) => {
       let providerNotice = "";
       let result;
       try {
-        result = await callModel(selectedSpeaker, transcript, instruction, MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
+        result = await callModel(selectedSpeaker, transcript, instruction, MAX_DEBATE_OUTPUT_TOKENS, context);
       } catch (err) {
         if (selectedSpeaker !== "Claude" || !isClaudeUnavailableError(err)) throw err;
         providerNotice = CLAUDE_FALLBACK_NOTICE;
         actualSpeaker = "GPT";
-        result = await callGPT(transcript, instruction + "\n\nClaude is temporarily unavailable due to its API usage limit. Continue as GPT only; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, knowledge.context);
+        result = await callGPT(transcript, instruction + "\n\nClaude is temporarily unavailable due to its API usage limit. Continue as GPT only; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, context);
       }
       const working = [...transcript, { speaker: actualSpeaker, text: result.text } as Turn];
       const gptTokens = actualSpeaker === "GPT" ? result.tokens : 0;
@@ -687,8 +699,9 @@ Deno.serve(async (req) => {
     if (action === "finalize_step" || action === "finalize") {
       if (!transcript.length) return json({ error: "start a conversation before finalizing" }, 400);
       const knowledge = await getKnowledgeContext(recentSearchBasis(transcript));
+      const context = `${knowledge.context}\n\n${chatAttachmentContext(transcript, recentSearchBasis(transcript))}`;
       try {
-        const result = await finalizeStep(transcript, requestedSpeaker, body.finalizationState, knowledge.context);
+        const result = await finalizeStep(transcript, requestedSpeaker, body.finalizationState, context);
         return json({ ...result, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] } });
       } catch (err) {
         if (!isClaudeUnavailableError(err)) throw err;
@@ -698,7 +711,7 @@ Deno.serve(async (req) => {
         if (state?.stage === "review" && state.drafter === "GPT" && state.proposed.trim()) {
           finalText = state.proposed;
         } else {
-          const fallback = await callGPT(transcript, draftInstruction + "\n\nClaude is temporarily unavailable due to its API usage limit. Produce the strongest final output yourself. Do not claim cross-model consensus or Claude review.", MAX_FINAL_OUTPUT_TOKENS, knowledge.context, "read_only");
+          const fallback = await callGPT(transcript, draftInstruction + "\n\nClaude is temporarily unavailable due to its API usage limit. Produce the strongest final output yourself. Do not claim cross-model consensus or Claude review.", MAX_FINAL_OUTPUT_TOKENS, context, "read_only");
           finalText = fallback.text;
           gptTokens = fallback.tokens;
         }
