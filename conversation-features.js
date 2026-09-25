@@ -198,7 +198,7 @@
     const allowed = new Set(["Dylan", "GPT", "Claude", "Agent", "Consensus"]);
     const turns = value
       .filter(t => t && allowed.has(String(t.speaker)) && typeof t.text === "string")
-      .map(t => ({ speaker: t.speaker, text: t.text }));
+      .map(t => ({ speaker: t.speaker, text: t.text, attachments: Array.isArray(t.attachments) ? t.attachments.filter(f => f && typeof f.name === "string" && typeof f.text === "string").slice(0, 3) : undefined }));
     if (!turns.length) throw new Error("No valid Think Tank turns were found in this file.");
     return turns;
   }
