@@ -20,6 +20,8 @@ header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top
 <body>
 <div id="setupOverlay" class="overlay hidden"><div class="modal" style="max-width:460px"><h2>Connect Think Tank</h2><div class="small">Enter the same relay secret used by Think Tank. It stays in this browser.</div><div class="field"><input id="secretInput" type="password" placeholder="Relay secret" /></div><div class="modal-actions"><button class="btn primary" id="saveSecretBtn">Save & Open</button></div></div></div>
 
+<div id="openOverlay" class="overlay hidden"><div class="modal"><h2>Open troubleshooting session</h2><div class="small">Resume an existing incident without losing its diagnostic trail.</div><div id="sessionList" style="display:flex;flex-direction:column;gap:8px;margin-top:12px"></div><div class="modal-actions"><button class="btn" id="closeOpenBtn">Close</button></div></div></div>
+
 <div id="newOverlay" class="overlay hidden"><div class="modal"><h2>Start troubleshooting</h2><div class="small">Create one incident record. The chat will stay focused on diagnosis and the event log will preserve what was observed, tested, and resolved.</div>
 <div class="field"><label>Issue title</label><input id="issueTitle" placeholder="Inbound ASRS entry rejects" /></div>
 <div class="field"><label>Initial symptom</label><textarea id="issueSymptom" placeholder="What is physically or systemically happening?"></textarea></div>
@@ -30,7 +32,7 @@ header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top
 </div></div>
 
 <div class="app">
-<header><div class="top"><div><div class="title">Troubleshooting</div><div class="sub">Evidence-led diagnosis · persistent incident log · Process Memory aware</div></div><div class="actions"><a class="btn" href="index.html">Think Tank</a><button class="btn" id="newBtn">New Issue</button><button class="btn good" id="resolveBtn">Resolve</button></div></div></header>
+<header><div class="top"><div><div class="title">Troubleshooting</div><div class="sub">Evidence-led diagnosis · persistent incident log · Process Memory aware</div></div><div class="actions"><a class="btn" href="index.html">Think Tank</a><button class="btn" id="openBtn">Open</button><button class="btn" id="newBtn">New Issue</button><button class="btn good" id="resolveBtn">Resolve</button></div></div></header>
 <div class="layout">
   <section class="panel">
     <div class="panel-head"><div><div class="panel-title" id="sessionTitle">No active issue</div><div class="small" id="sessionSub">Start or resume a troubleshooting session.</div></div><button class="btn" id="refreshBtn">Refresh</button></div>
@@ -101,6 +103,17 @@ async function loadSession(){
   if(!sessionId)return render();
   try{const d=await post(TROUBLE_URL,{action:"get",sessionId});session=d.session;events=d.events||[];render()}catch(err){$("status").textContent=`Load failed: ${err.message}`}
 }
+async function openSessions(){
+  try{
+    const d=await post(TROUBLE_URL,{action:"list"});
+    const rows=Array.isArray(d.sessions)?d.sessions:[];
+    $("sessionList").innerHTML=rows.length?rows.map(s=>`<button class="btn" style="text-align:left" data-session-id="${esc(s.id)}"><strong>${esc(s.title)}</strong><br><span class="small">${esc(s.status)} · ${esc([s.facility_key,s.process_area].filter(Boolean).join(" · "))} · ${new Date(s.started_at).toLocaleString()}</span></button>`).join(""):'<div class="small">No saved troubleshooting sessions yet.</div>';
+    $("sessionList").querySelectorAll("[data-session-id]").forEach(btn=>btn.addEventListener("click",async()=>{
+      sessionId=btn.dataset.sessionId;localStorage.setItem(STORAGE.session,sessionId);transcript=[];nextSpeaker="GPT";totalTokens=0;save();$("openOverlay").classList.add("hidden");await loadSession();$("status").textContent="Troubleshooting session opened.";
+    }));
+    $("openOverlay").classList.remove("hidden");
+  }catch(err){$("status").textContent=`List failed: ${err.message}`}
+}
 async function append(type,actor,content,extra={}){
   if(!sessionId||!content.trim())return;
   const d=await post(TROUBLE_URL,{action:"append",sessionId,eventType:type,actor,content,...extra});
@@ -149,7 +162,7 @@ async function resolve(){
   try{const d=await post(TROUBLE_URL,{action:"resolve",sessionId,rootCause:root,resolution,resolutionSummary:""});session=d.session;await loadSession();$("status").textContent="Issue marked resolved and the resolution was preserved in the incident log."}catch(err){$("status").textContent=`Resolve failed: ${err.message}`}
 }
 document.querySelectorAll("[data-type]").forEach(b=>b.addEventListener("click",()=>{$("eventType").value=b.dataset.type;$("question").focus()}));
-$("newBtn").onclick=()=>$("newOverlay").classList.remove("hidden");$("cancelNewBtn").onclick=()=>$("newOverlay").classList.add("hidden");$("createIssueBtn").onclick=createIssue;$("sendBtn").onclick=send;$("nextBtn").onclick=nextStep;$("setHypothesisBtn").onclick=setHypothesis;$("resolveBtn").onclick=resolve;$("refreshBtn").onclick=loadSession;
+$("openBtn").onclick=openSessions;$("closeOpenBtn").onclick=()=>$("openOverlay").classList.add("hidden");$("newBtn").onclick=()=>$("newOverlay").classList.remove("hidden");$("cancelNewBtn").onclick=()=>$("newOverlay").classList.add("hidden");$("createIssueBtn").onclick=createIssue;$("sendBtn").onclick=send;$("nextBtn").onclick=nextStep;$("setHypothesisBtn").onclick=setHypothesis;$("resolveBtn").onclick=resolve;$("refreshBtn").onclick=loadSession;
 $("saveSecretBtn").onclick=async()=>{const v=$("secretInput").value.trim();if(!v)return;localStorage.setItem(STORAGE.secret,v);$("secretInput").value="";$("setupOverlay").classList.add("hidden");await loadSession()};
 $("question").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")send()});
 if(!secret())$("setupOverlay").classList.remove("hidden");if(!sessionId)$("newOverlay").classList.remove("hidden");render();if(secret()&&sessionId)loadSession();
