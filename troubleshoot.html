@@ -99,6 +99,12 @@ function render(){
   if(!events.length){$("timeline").innerHTML='<div class="empty" style="padding:35px 12px">No events yet.</div>'}
   else{$("timeline").innerHTML=events.map(e=>`<div class="event"><div class="event-top"><span class="event-type">${esc(e.event_type)}</span><span class="event-seq">#${e.sequence}</span></div><div class="event-content">${esc(e.content)}</div><div class="event-actor">${esc(e.actor)} · ${new Date(e.created_at).toLocaleString()}</div></div>`).join("")}
 }
+function seedTranscriptFromIncident(){
+  if(!session||!events.length)return;
+  const lines=events.slice(-40).map(e=>`#${e.sequence} [${e.event_type}] ${e.actor}: ${e.content}`);
+  transcript=[{speaker:"Dylan",text:`Resume this troubleshooting incident. Use this structured incident log as prior context. Do not treat hypotheses as confirmed root cause.\n\nIssue: ${session.title}\nSymptom: ${session.symptom}\nFacility/process: ${[session.facility_key,session.process_area].filter(Boolean).join(" / ")}\nCurrent hypothesis: ${session.current_hypothesis||"None established"}\n\nINCIDENT LOG\n${lines.join("\n")}`}];
+  nextSpeaker="GPT";totalTokens=0;save();
+}
 async function loadSession(){
   if(!sessionId)return render();
   try{const d=await post(TROUBLE_URL,{action:"get",sessionId});session=d.session;events=d.events||[];render()}catch(err){$("status").textContent=`Load failed: ${err.message}`}
@@ -109,7 +115,7 @@ async function openSessions(){
     const rows=Array.isArray(d.sessions)?d.sessions:[];
     $("sessionList").innerHTML=rows.length?rows.map(s=>`<button class="btn" style="text-align:left" data-session-id="${esc(s.id)}"><strong>${esc(s.title)}</strong><br><span class="small">${esc(s.status)} · ${esc([s.facility_key,s.process_area].filter(Boolean).join(" · "))} · ${new Date(s.started_at).toLocaleString()}</span></button>`).join(""):'<div class="small">No saved troubleshooting sessions yet.</div>';
     $("sessionList").querySelectorAll("[data-session-id]").forEach(btn=>btn.addEventListener("click",async()=>{
-      sessionId=btn.dataset.sessionId;localStorage.setItem(STORAGE.session,sessionId);transcript=[];nextSpeaker="GPT";totalTokens=0;save();$("openOverlay").classList.add("hidden");await loadSession();$("status").textContent="Troubleshooting session opened.";
+      sessionId=btn.dataset.sessionId;localStorage.setItem(STORAGE.session,sessionId);transcript=[];nextSpeaker="GPT";totalTokens=0;save();$("openOverlay").classList.add("hidden");await loadSession();seedTranscriptFromIncident();render();$("status").textContent="Troubleshooting session opened with its incident log loaded into AI context.";
     }));
     $("openOverlay").classList.remove("hidden");
   }catch(err){$("status").textContent=`List failed: ${err.message}`}
