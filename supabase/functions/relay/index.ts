@@ -59,6 +59,16 @@ type Speaker = "Dylan" | "GPT" | "Claude" | "Agent" | "Consensus";
 type AiSpeaker = "GPT" | "Claude";
 type RouteMode = "auto" | "single" | "both" | "debate";
 type RouteRequest = { mode?: RouteMode; order?: AiSpeaker[] };
+type HelperMode = "standard" | "troubleshoot" | "challenge" | "plan" | "explain" | "decision";
+function helperInstruction(value: unknown) {
+  const mode: HelperMode = value === "troubleshoot" || value === "challenge" || value === "plan" || value === "explain" || value === "decision" ? value : "standard";
+  if (mode === "troubleshoot") return `CHAT HELPER: TROUBLESHOOT. Work toward resolution, not generic explanation. Maintain a causal chain from symptom to system/process boundaries. Separate confirmed facts, observations, hypotheses, tests, results, and unresolved gaps. Ask the next highest-value diagnostic question or recommend the next discriminating check. Do not declare root cause until evidence supports it. Prefer tracing identifiers, timestamps, messages, states, ownership boundaries, and physical location. Preserve an effective incident timeline that can later be summarized into symptom, impact, checks performed, evidence, root cause, corrective action, and prevention.`;
+  if (mode === "challenge") return `CHAT HELPER: CHALLENGE. Stress-test the current reasoning. Identify consequential assumptions, missing evidence, alternative explanations, failure modes, and contradictions. Do not disagree for style or novelty; challenge only where it could change the conclusion or action.`;
+  if (mode === "plan") return `CHAT HELPER: PLAN. Convert the discussion into an executable sequence with dependencies, owners or systems when known, decision points, and clear next actions. Surface unknowns that block execution instead of inventing them.`;
+  if (mode === "explain") return `CHAT HELPER: EXPLAIN. Build a clear mental model of how the process or system works, including boundaries, inputs, outputs, states, messages, and ownership. Distinguish documented behavior from operationally confirmed behavior and inference.`;
+  if (mode === "decision") return `CHAT HELPER: DECISION. Help compare the available paths using explicit criteria, evidence, tradeoffs, risks, reversibility, and missing information. Do not force a recommendation when the evidence does not support one.`;
+  return "";
+}
 type Attachment = { name: string; type?: string; size?: number; text: string };
 type Turn = { speaker: Speaker; text: string; attachments?: Attachment[] };
 type KnowledgeChunk = { document_id: string; document_name: string; chunk_index: number; content: string; rank?: number; similarity?: number };
@@ -641,6 +651,7 @@ Deno.serve(async (req) => {
     const action = typeof body.action === "string" ? body.action : "message";
     const transcript = normalizeTranscript(body.transcript);
     const requestedSpeaker: AiSpeaker = body.nextSpeaker === "Claude" || body.firstSpeaker === "Claude" ? "Claude" : "GPT";
+    const helper = helperInstruction(body.helperMode);
     if (transcript.length > MAX_TRANSCRIPT_TURNS) return json({ error: `transcript exceeds ${MAX_TRANSCRIPT_TURNS} turns; start a new session` }, 400);
     // Public-facing demo path: no knowledge retrieval, chat attachments, agent, or connected tools.
     if (body.mode === "demo") {
@@ -682,7 +693,7 @@ Deno.serve(async (req) => {
       for (const plannedSpeaker of plannedRoute) {
         const speaker = plannedSpeaker;
         try {
-          const result = await callModel(speaker, working, "", MAX_DEBATE_OUTPUT_TOKENS, context);
+          const result = await callModel(speaker, working, helper, MAX_DEBATE_OUTPUT_TOKENS, context);
           working.push({ speaker, text: result.text });
           actualRoute.push(speaker);
           if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
@@ -691,7 +702,7 @@ Deno.serve(async (req) => {
           providerNotice = CLAUDE_FALLBACK_NOTICE;
           const alreadyHasFreshGpt = working.length > 0 && working[working.length - 1]?.speaker === "GPT";
           if (!alreadyHasFreshGpt) {
-            const fallback = await callGPT(working, "Claude is temporarily unavailable because its API usage limit was reached. Make the single most useful contribution yourself; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, context);
+            const fallback = await callGPT(working, [helper, "Claude is temporarily unavailable because its API usage limit was reached. Make the single most useful contribution yourself; do not impersonate Claude."].filter(Boolean).join("\n\n"), MAX_DEBATE_OUTPUT_TOKENS, context);
             working.push({ speaker: "GPT", text: fallback.text });
             actualRoute.push("GPT");
             gptTokens += fallback.tokens;
@@ -708,7 +719,7 @@ Deno.serve(async (req) => {
       if (!transcript.length) return json({ error: "start a conversation before requesting the next response" }, 400);
       const knowledge = await getKnowledgeContext(recentSearchBasis(transcript));
       const context = `${knowledge.context}\n\n${chatAttachmentContext(transcript, recentSearchBasis(transcript))}`;
-      const instruction = "Continue the discussion from the exact point it currently stands. Do not pretend Dylan spoke again. Make the most useful next contribution. You may extend a sound idea, add missing analysis, correct a material issue, reframe the problem, or briefly confirm something that is already right. Do not manufacture disagreement or repeat points that are already settled.";
+      const instruction = ["Continue the discussion from the exact point it currently stands. Do not pretend Dylan spoke again. Make the most useful next contribution. You may extend a sound idea, add missing analysis, correct a material issue, reframe the problem, or briefly confirm something that is already right. Do not manufacture disagreement or repeat points that are already settled.", helper].filter(Boolean).join("\n\n");
       const nextRoute = normalizeRoute(body.route, requestedSpeaker, 1);
       const selectedSpeaker = nextRoute[0] || requestedSpeaker;
       let actualSpeaker = selectedSpeaker;
@@ -731,7 +742,7 @@ Deno.serve(async (req) => {
     if (action === "finalize_step" || action === "finalize") {
       if (!transcript.length) return json({ error: "start a conversation before finalizing" }, 400);
       const knowledge = await getKnowledgeContext(recentSearchBasis(transcript));
-      const context = `${knowledge.context}\n\n${chatAttachmentContext(transcript, recentSearchBasis(transcript))}`;
+      const context = [`${knowledge.context}\n\n${chatAttachmentContext(transcript, recentSearchBasis(transcript))}`, helper].filter(Boolean).join("\n\n");
       try {
         const result = await finalizeStep(transcript, requestedSpeaker, body.finalizationState, context);
         return json({ ...result, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] } });
