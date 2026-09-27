@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#0b0f14" />
+<title>Think Tank Troubleshooting</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0f14;--panel:#111821;--panel2:#151e29;--border:#263241;--text:#edf3f8;--muted:#91a0af;--accent:#dbeafe;--accentText:#08111d;--warn:#6b4724;--good:#164635;--danger:#582929}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer}.app{max-width:1180px;margin:auto;min-height:100dvh}
+header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top)) 16px 12px;background:rgba(11,15,20,.96);border-bottom:1px solid var(--border);backdrop-filter:blur(18px)}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.title{font-weight:850;font-size:20px}.sub{color:var(--muted);font-size:12px;margin-top:4px}.actions{display:flex;gap:7px;flex-wrap:wrap}.btn{border:1px solid var(--border);border-radius:11px;background:var(--panel2);color:var(--text);padding:9px 12px;font-weight:700}.btn.primary{background:var(--accent);color:var(--accentText);border-color:transparent}.btn.warn{background:var(--warn)}.btn.good{background:var(--good)}.btn.danger{background:var(--danger)}a.btn{text-decoration:none}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:14px;padding:14px 14px 250px}.panel{border:1px solid var(--border);border-radius:16px;background:var(--panel);overflow:hidden}.panel-head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px}.panel-title{font-weight:800}.small{font-size:12px;color:var(--muted)}.session-meta{padding:12px 14px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:8px}.meta-box{background:var(--bg);border:1px solid var(--border);border-radius:11px;padding:9px}.meta-label{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:800}.meta-value{font-size:13px;margin-top:4px;white-space:pre-wrap}
+#messages{padding:14px;min-height:430px}.empty{color:var(--muted);padding:70px 20px;text-align:center;line-height:1.5}.turn{border:1px solid var(--border);border-radius:14px;background:var(--panel2);padding:12px 14px;margin-bottom:12px}.turn-head{font-size:11px;font-weight:850;color:#aac6e6;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}.turn.Dylan .turn-head{color:#e9c99e}.turn.Claude .turn-head{color:#d9b8ff}.turn-body{white-space:pre-wrap;line-height:1.55}
+.timeline{padding:10px;display:flex;flex-direction:column;gap:8px;max-height:70dvh;overflow:auto}.event{border:1px solid var(--border);border-radius:12px;padding:10px;background:var(--bg)}.event-top{display:flex;justify-content:space-between;gap:8px}.event-type{font-size:10px;font-weight:850;text-transform:uppercase;color:#b9d2ee}.event-seq{font-size:10px;color:var(--muted)}.event-content{font-size:13px;line-height:1.45;margin-top:5px;white-space:pre-wrap}.event-actor{font-size:10px;color:var(--muted);margin-top:5px}
+.composer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(11,15,20,.98);border-top:1px solid var(--border);padding:10px max(14px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));backdrop-filter:blur(20px)}.composer-inner{max-width:1180px;margin:auto}.compose-row{display:grid;grid-template-columns:170px 1fr;gap:8px}select,textarea,input{border:1px solid var(--border);border-radius:12px;background:var(--panel);color:var(--text);padding:11px;outline:none}textarea{min-height:72px;max-height:160px;resize:vertical;width:100%}.compose-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.status{font-size:12px;color:var(--muted);min-height:17px;margin-top:7px}.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.quick .btn{padding:6px 9px;font-size:11px}
+.overlay{position:fixed;inset:0;z-index:100;background:rgba(7,10,14,.97);display:flex;align-items:center;justify-content:center;padding:20px}.overlay.hidden{display:none}.modal{width:min(620px,100%);border:1px solid var(--border);border-radius:18px;background:var(--panel);padding:18px}.modal h2{margin:0 0 6px}.field{margin-top:10px}.field label{font-size:11px;color:var(--muted);display:block;margin-bottom:5px}.field input,.field textarea{width:100%}.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+@media(max-width:850px){.layout{grid-template-columns:1fr;padding-bottom:280px}.timeline{max-height:none}.compose-row{grid-template-columns:1fr}.session-meta{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div id="setupOverlay" class="overlay hidden"><div class="modal" style="max-width:460px"><h2>Connect Think Tank</h2><div class="small">Enter the same relay secret used by Think Tank. It stays in this browser.</div><div class="field"><input id="secretInput" type="password" placeholder="Relay secret" /></div><div class="modal-actions"><button class="btn primary" id="saveSecretBtn">Save & Open</button></div></div></div>
+
+<div id="newOverlay" class="overlay hidden"><div class="modal"><h2>Start troubleshooting</h2><div class="small">Create one incident record. The chat will stay focused on diagnosis and the event log will preserve what was observed, tested, and resolved.</div>
+<div class="field"><label>Issue title</label><input id="issueTitle" placeholder="Inbound ASRS entry rejects" /></div>
+<div class="field"><label>Initial symptom</label><textarea id="issueSymptom" placeholder="What is physically or systemically happening?"></textarea></div>
+<div class="field"><label>Facility</label><input id="issueFacility" placeholder="LVO" /></div>
+<div class="field"><label>Process area</label><input id="issueProcess" placeholder="Inbound ASRS" /></div>
+<div class="field"><label>Systems (comma separated)</label><input id="issueSystems" placeholder="WMOS, Vargo/COFE, IBM MQ, Neuron, TGW Commander, PLC" /></div>
+<div class="modal-actions"><button class="btn" id="cancelNewBtn">Cancel</button><button class="btn primary" id="createIssueBtn">Start Issue</button></div>
+</div></div>
+
+<div class="app">
+<header><div class="top"><div><div class="title">Troubleshooting</div><div class="sub">Evidence-led diagnosis · persistent incident log · Process Memory aware</div></div><div class="actions"><a class="btn" href="index.html">Think Tank</a><button class="btn" id="newBtn">New Issue</button><button class="btn good" id="resolveBtn">Resolve</button></div></div></header>
+<div class="layout">
+  <section class="panel">
+    <div class="panel-head"><div><div class="panel-title" id="sessionTitle">No active issue</div><div class="small" id="sessionSub">Start or resume a troubleshooting session.</div></div><button class="btn" id="refreshBtn">Refresh</button></div>
+    <div class="session-meta">
+      <div class="meta-box"><div class="meta-label">Symptom</div><div class="meta-value" id="symptomValue">—</div></div>
+      <div class="meta-box"><div class="meta-label">Current hypothesis</div><div class="meta-value" id="hypothesisValue">Not established</div></div>
+      <div class="meta-box"><div class="meta-label">Facility / process</div><div class="meta-value" id="scopeValue">—</div></div>
+      <div class="meta-box"><div class="meta-label">Status</div><div class="meta-value" id="statusValue">—</div></div>
+    </div>
+    <div id="messages"><div class="empty"><strong>Troubleshooting mode is evidence-first.</strong><br>It will trace boundaries, distinguish facts from hypotheses, and drive toward the next discriminating check instead of jumping to a root cause.</div></div>
+  </section>
+  <aside class="panel">
+    <div class="panel-head"><div><div class="panel-title">Incident Log</div><div class="small">Chronological evidence trail</div></div></div>
+    <div class="timeline" id="timeline"><div class="empty" style="padding:35px 12px">No events yet.</div></div>
+  </aside>
+</div>
+</div>
+
+<div class="composer"><div class="composer-inner">
+  <div class="compose-row">
+    <select id="eventType">
+      <option value="observation">Observation</option>
+      <option value="test">Test / check</option>
+      <option value="result">Test result</option>
+      <option value="hypothesis">Hypothesis</option>
+      <option value="action">Action taken</option>
+      <option value="evidence">Evidence</option>
+      <option value="note">Note</option>
+    </select>
+    <textarea id="question" placeholder="Add what you observed, what was checked, or the latest result..."></textarea>
+  </div>
+  <div class="quick">
+    <button class="btn" data-type="observation">Observed</button>
+    <button class="btn" data-type="test">Checking</button>
+    <button class="btn" data-type="result">Result</button>
+    <button class="btn" data-type="hypothesis">Hypothesis</button>
+    <button class="btn" data-type="action">Action</button>
+  </div>
+  <div class="compose-actions"><button class="btn primary" id="sendBtn">Send & Log</button><button class="btn" id="nextBtn">Next Diagnostic Step</button><button class="btn warn" id="setHypothesisBtn">Set Current Hypothesis</button></div>
+  <div class="status" id="status"></div>
+</div></div>
+
+<script>
+const BASE="https://ddxhpsgwxqoejghmsatg.supabase.co/functions/v1";
+const RELAY_URL=`${BASE}/relay`, TROUBLE_URL=`${BASE}/troubleshooting`;
+const STORAGE={secret:"thinktank_relay_secret",session:"thinktank_troubleshooting_session_v1",transcript:"thinktank_troubleshooting_transcript_v1",next:"thinktank_troubleshooting_next_v1",tokens:"thinktank_troubleshooting_tokens_v1"};
+let sessionId=localStorage.getItem(STORAGE.session)||"", transcript=safeParse(localStorage.getItem(STORAGE.transcript),[]), nextSpeaker=localStorage.getItem(STORAGE.next)||"GPT", totalTokens=Number(localStorage.getItem(STORAGE.tokens)||0), session=null, events=[],busy=false;
+const $=id=>document.getElementById(id);
+function safeParse(v,f){try{return v?JSON.parse(v):f}catch{return f}}
+function secret(){return localStorage.getItem(STORAGE.secret)||""}
+function save(){localStorage.setItem(STORAGE.session,sessionId);localStorage.setItem(STORAGE.transcript,JSON.stringify(transcript));localStorage.setItem(STORAGE.next,nextSpeaker);localStorage.setItem(STORAGE.tokens,String(totalTokens))}
+function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
+async function post(url,payload){if(!secret()){$("setupOverlay").classList.remove("hidden");throw new Error("Relay secret required")}const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","x-relay-secret":secret()},body:JSON.stringify(payload)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d}
+function setBusy(v,msg=""){busy=v;if(msg)$("status").textContent=msg;$("sendBtn").disabled=v;$("nextBtn").disabled=v}
+function render(){
+  $("sessionTitle").textContent=session?.title||"No active issue";
+  $("sessionSub").textContent=session?(`${session.systems?.join(" → ")||"No systems listed"} · started ${new Date(session.started_at).toLocaleString()}`):"Start or resume a troubleshooting session.";
+  $("symptomValue").textContent=session?.symptom||"—";
+  $("hypothesisValue").textContent=session?.current_hypothesis||"Not established";
+  $("scopeValue").textContent=session?[session.facility_key,session.process_area].filter(Boolean).join(" · ")||"—":"—";
+  $("statusValue").textContent=session?.status||"—";
+  if(!transcript.length){$("messages").innerHTML='<div class="empty"><strong>Troubleshooting mode is evidence-first.</strong><br>Describe the issue and Think Tank will work the diagnostic chain one useful step at a time.</div>'}
+  else{$("messages").innerHTML=transcript.map(t=>`<div class="turn ${esc(t.speaker)}"><div class="turn-head">${esc(t.speaker)}</div><div class="turn-body">${esc(t.text)}</div></div>`).join("")}
+  if(!events.length){$("timeline").innerHTML='<div class="empty" style="padding:35px 12px">No events yet.</div>'}
+  else{$("timeline").innerHTML=events.map(e=>`<div class="event"><div class="event-top"><span class="event-type">${esc(e.event_type)}</span><span class="event-seq">#${e.sequence}</span></div><div class="event-content">${esc(e.content)}</div><div class="event-actor">${esc(e.actor)} · ${new Date(e.created_at).toLocaleString()}</div></div>`).join("")}
+}
+async function loadSession(){
+  if(!sessionId)return render();
+  try{const d=await post(TROUBLE_URL,{action:"get",sessionId});session=d.session;events=d.events||[];render()}catch(err){$("status").textContent=`Load failed: ${err.message}`}
+}
+async function append(type,actor,content,extra={}){
+  if(!sessionId||!content.trim())return;
+  const d=await post(TROUBLE_URL,{action:"append",sessionId,eventType:type,actor,content,...extra});
+  if(d.event)events.push(d.event);
+  render();
+}
+async function createIssue(){
+  const title=$("issueTitle").value.trim(),symptom=$("issueSymptom").value.trim();if(!title||!symptom)return;
+  try{
+    const d=await post(TROUBLE_URL,{action:"create",title,symptom,facilityKey:$("issueFacility").value.trim(),processArea:$("issueProcess").value.trim(),systems:$("issueSystems").value.split(",").map(x=>x.trim()).filter(Boolean)});
+    session=d.session;sessionId=session.id;events=[];transcript=[{speaker:"Dylan",text:`Troubleshooting issue: ${title}\n\nInitial symptom: ${symptom}`}];nextSpeaker="GPT";totalTokens=0;save();$("newOverlay").classList.add("hidden");await loadSession();
+    $("question").value="";$("status").textContent="Issue started. Add the latest observation or test result.";
+  }catch(err){$("status").textContent=`Create failed: ${err.message}`}
+}
+async function relay(payload,msg){
+  setBusy(true,msg);
+  try{const d=await post(RELAY_URL,{...payload,helperMode:"troubleshoot"});transcript=Array.isArray(d.transcript)?d.transcript:transcript;nextSpeaker=d.nextSpeaker==="Claude"?"Claude":"GPT";totalTokens+=Number(d?.usage?.roundTokens||0);save();render();setTimeout(()=>window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"}),40);return d}
+  catch(err){$("status").textContent=`Error: ${err.message}`;return null}
+  finally{setBusy(false)}
+}
+async function send(){
+  if(busy||!sessionId)return;if(!session){await loadSession();if(!session)return}
+  const text=$("question").value.trim();if(!text)return;const type=$("eventType").value;
+  await append(type,"Dylan",text,type==="hypothesis"?{currentHypothesis:text}:{});
+  const before=transcript.length;
+  const d=await relay({action:"message",message:text,transcript,nextSpeaker,route:{mode:"both",order:["GPT","Claude"]}},"Tracing the issue...");
+  if(!d)return;
+  const fresh=transcript.slice(before).filter(t=>t.speaker==="GPT"||t.speaker==="Claude");
+  for(const t of fresh)await append("analysis",t.speaker,t.text);
+  $("question").value="";await loadSession();$("status").textContent="Logged. Continue with the next observation, test, or result.";
+}
+async function nextStep(){
+  if(busy||!sessionId||!transcript.length)return;
+  const before=transcript.length;
+  const d=await relay({action:"next",transcript,nextSpeaker,route:{mode:"single",order:[nextSpeaker]}},"Finding the next diagnostic step...");
+  if(!d)return;
+  for(const t of transcript.slice(before).filter(t=>t.speaker==="GPT"||t.speaker==="Claude"))await append("analysis",t.speaker,t.text);
+  await loadSession();$("status").textContent="Next diagnostic step logged.";
+}
+async function setHypothesis(){
+  if(!sessionId)return;const value=prompt("Current working hypothesis:",session?.current_hypothesis||"");if(value===null||!value.trim())return;
+  await append("hypothesis","Dylan",value.trim(),{currentHypothesis:value.trim()});await loadSession();$("status").textContent="Current hypothesis updated.";
+}
+async function resolve(){
+  if(!sessionId)return;const root=prompt("Confirmed root cause (leave blank if unresolved):",session?.root_cause||"");if(root===null)return;const resolution=prompt("What resolved or contained the issue?",session?.resolution||"");if(resolution===null||!resolution.trim())return;
+  try{const d=await post(TROUBLE_URL,{action:"resolve",sessionId,rootCause:root,resolution,resolutionSummary:""});session=d.session;await loadSession();$("status").textContent="Issue marked resolved and the resolution was preserved in the incident log."}catch(err){$("status").textContent=`Resolve failed: ${err.message}`}
+}
+document.querySelectorAll("[data-type]").forEach(b=>b.addEventListener("click",()=>{$("eventType").value=b.dataset.type;$("question").focus()}));
+$("newBtn").onclick=()=>$("newOverlay").classList.remove("hidden");$("cancelNewBtn").onclick=()=>$("newOverlay").classList.add("hidden");$("createIssueBtn").onclick=createIssue;$("sendBtn").onclick=send;$("nextBtn").onclick=nextStep;$("setHypothesisBtn").onclick=setHypothesis;$("resolveBtn").onclick=resolve;$("refreshBtn").onclick=loadSession;
+$("saveSecretBtn").onclick=async()=>{const v=$("secretInput").value.trim();if(!v)return;localStorage.setItem(STORAGE.secret,v);$("secretInput").value="";$("setupOverlay").classList.add("hidden");await loadSession()};
+$("question").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")send()});
+if(!secret())$("setupOverlay").classList.remove("hidden");if(!sessionId)$("newOverlay").classList.remove("hidden");render();if(secret()&&sessionId)loadSession();
+</script>
+</body></html>
