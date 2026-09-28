@@ -503,6 +503,15 @@ async function callClaude(transcript: Turn[], instruction = "", maxTokens = MAX_
     const usage = data.usage ?? {};
     tokens += Number(usage.input_tokens ?? 0) + Number(usage.output_tokens ?? 0);
     const content = Array.isArray(data.content) ? data.content : [];
+    const stopReason = String(data.stop_reason ?? "unknown");
+    const partialText = content.filter((block: any) => block?.type === "text" && typeof block.text === "string").map((block: any) => block.text).join("").trim();
+
+    // Anthropic can return some visible text and then stop the turn with stop_reason=refusal.
+    // Do not surface that partial fragment as if it were a completed Claude answer.
+    if (stopReason === "refusal") {
+      throw new Error(`CLAUDE_REFUSED: Anthropic declined this turn after ${partialText.length} visible character(s).`);
+    }
+
     const uses = allowTools ? content.filter((block: any) => block?.type === "tool_use") : [];
 
     if (uses.length) {
@@ -516,13 +525,9 @@ async function callClaude(transcript: Turn[], instruction = "", maxTokens = MAX_
       continue;
     }
 
-    const text = content.filter((block: any) => block?.type === "text" && typeof block.text === "string").map((block: any) => block.text).join("").trim();
+    const text = partialText;
     if (!text) {
-      const stopReason = String(data.stop_reason ?? "unknown");
       const contentTypes = content.map((block: any) => block?.type ?? "unknown").join(",") || "none";
-      if (stopReason === "refusal") {
-        throw new Error(`CLAUDE_REFUSED: Anthropic declined this turn (content_types=${contentTypes}).`);
-      }
       throw new Error(`Anthropic returned no visible text (stop_reason=${stopReason}; content_types=${contentTypes}).`);
     }
     return { text, tokens };
