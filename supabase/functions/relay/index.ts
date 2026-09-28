@@ -679,14 +679,30 @@ Deno.serve(async (req) => {
       const working: Turn[] = action === "message" ? [...transcript, { speaker: "Dylan", text: message }] : [...transcript];
       const speakers: AiSpeaker[] = action === "message" ? ["GPT", "Claude"] : [requestedSpeaker];
       let gptTokens = 0, claudeTokens = 0;
+      let providerNotice = "";
       for (const speaker of speakers) {
-        const result = await callModel(speaker, working,
-          "This is a standalone general-purpose demonstration. Use only the visible conversation. Speak for yourself, and do not imply access to personal files, stored knowledge, or tools.",
-          MAX_DEBATE_OUTPUT_TOKENS, "", "none", DEMO_CHARTER);
-        working.push({ speaker, text: result.text });
-        if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
+        try {
+          const result = await callModel(speaker, working,
+            "This is a standalone general-purpose demonstration. Use only the visible conversation. Speak for yourself, and do not imply access to personal files, stored knowledge, or tools.",
+            MAX_DEBATE_OUTPUT_TOKENS, "", "none", DEMO_CHARTER);
+          working.push({ speaker, text: result.text });
+          if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
+        } catch (err) {
+          if (speaker !== "Claude" || (!isClaudeUnavailableError(err) && !isClaudeRefusalError(err))) throw err;
+          providerNotice = claudeFailureNotice(err);
+          const alreadyHasFreshGpt = working.length > 0 && working[working.length - 1]?.speaker === "GPT";
+          if (!alreadyHasFreshGpt) {
+            const reason = isClaudeRefusalError(err)
+              ? "Claude declined this demonstration turn. Answer independently as GPT using your own safety rules. Do not impersonate Claude."
+              : "Claude is temporarily unavailable. Continue as GPT only; do not impersonate Claude.";
+            const fallback = await callGPT(working, reason, MAX_DEBATE_OUTPUT_TOKENS, "", "none", DEMO_CHARTER);
+            working.push({ speaker: "GPT", text: fallback.text });
+            gptTokens += fallback.tokens;
+          }
+          break;
+        }
       }
-      return json({ transcript: working, nextSpeaker: action === "message" ? "GPT" : otherSpeaker(requestedSpeaker), usage: { gptTokens, claudeTokens, roundTokens: gptTokens + claudeTokens } });
+      return json({ transcript: working, nextSpeaker: providerNotice ? "GPT" : (action === "message" ? "GPT" : otherSpeaker(requestedSpeaker)), providerNotice, usage: { gptTokens, claudeTokens, roundTokens: gptTokens + claudeTokens } });
     }
 
 
