@@ -311,6 +311,16 @@
           break;
         }
 
+        if (f.status === "completed") {
+          transcript = Array.isArray(data.transcript) ? data.transcript : transcript;
+          nextSpeaker = data.nextSpeaker === "Claude" ? "Claude" : "GPT";
+          saveState();
+          render();
+          if (status) status.textContent = data.providerNotice || "Finalization completed without cross-model consensus.";
+          requestAnimationFrame(() => goLatest(true));
+          break;
+        }
+
         if (f.status === "unresolved") {
           saveState();
           if (status) status.textContent = `Consensus did not converge after the ${Number(f.maxCycles || 20)}-cycle emergency safety limit. No consensus output was added.`;
