@@ -518,8 +518,12 @@ async function callClaude(transcript: Turn[], instruction = "", maxTokens = MAX_
 
     const text = content.filter((block: any) => block?.type === "text" && typeof block.text === "string").map((block: any) => block.text).join("").trim();
     if (!text) {
+      const stopReason = String(data.stop_reason ?? "unknown");
       const contentTypes = content.map((block: any) => block?.type ?? "unknown").join(",") || "none";
-      throw new Error(`Anthropic returned no visible text (stop_reason=${String(data.stop_reason ?? "unknown")}; content_types=${contentTypes}).`);
+      if (stopReason === "refusal") {
+        throw new Error(`CLAUDE_REFUSED: Anthropic declined this turn (content_types=${contentTypes}).`);
+      }
+      throw new Error(`Anthropic returned no visible text (stop_reason=${stopReason}; content_types=${contentTypes}).`);
     }
     return { text, tokens };
   }
@@ -535,6 +539,13 @@ async function callModel(speaker: AiSpeaker, transcript: Turn[], instruction = "
 
 function isClaudeUnavailableError(err: unknown) {
   return err instanceof Error && err.message.startsWith("CLAUDE_UNAVAILABLE:");
+}
+function isClaudeRefusalError(err: unknown) {
+  return err instanceof Error && err.message.startsWith("CLAUDE_REFUSED:");
+}
+function claudeFailureNotice(err: unknown) {
+  if (isClaudeRefusalError(err)) return "Claude declined this turn. Think Tank kept the valid response(s) and continued without fabricating a Claude reply.";
+  return "Claude API usage limit reached. Think Tank continued with GPT only; Claude will automatically rejoin when the Anthropic API is available again.";
 }
 
 const CLAUDE_FALLBACK_NOTICE = "Claude API usage limit reached. Think Tank continued with GPT only; Claude will automatically rejoin when the Anthropic API is available again.";
@@ -698,11 +709,14 @@ Deno.serve(async (req) => {
           actualRoute.push(speaker);
           if (speaker === "GPT") gptTokens += result.tokens; else claudeTokens += result.tokens;
         } catch (err) {
-          if (speaker !== "Claude" || !isClaudeUnavailableError(err)) throw err;
-          providerNotice = CLAUDE_FALLBACK_NOTICE;
+          if (speaker !== "Claude" || (!isClaudeUnavailableError(err) && !isClaudeRefusalError(err))) throw err;
+          providerNotice = claudeFailureNotice(err);
           const alreadyHasFreshGpt = working.length > 0 && working[working.length - 1]?.speaker === "GPT";
           if (!alreadyHasFreshGpt) {
-            const fallback = await callGPT(working, [helper, "Claude is temporarily unavailable because its API usage limit was reached. Make the single most useful contribution yourself; do not impersonate Claude."].filter(Boolean).join("\n\n"), MAX_DEBATE_OUTPUT_TOKENS, context);
+            const reason = isClaudeRefusalError(err)
+              ? "Claude declined this turn. Answer independently as GPT using your own safety rules. Do not impersonate Claude or claim what Claude would have said."
+              : "Claude is temporarily unavailable because its API usage limit was reached. Make the single most useful contribution yourself; do not impersonate Claude.";
+            const fallback = await callGPT(working, [helper, reason].filter(Boolean).join("\n\n"), MAX_DEBATE_OUTPUT_TOKENS, context);
             working.push({ speaker: "GPT", text: fallback.text });
             actualRoute.push("GPT");
             gptTokens += fallback.tokens;
@@ -728,10 +742,13 @@ Deno.serve(async (req) => {
       try {
         result = await callModel(selectedSpeaker, transcript, instruction, MAX_DEBATE_OUTPUT_TOKENS, context);
       } catch (err) {
-        if (selectedSpeaker !== "Claude" || !isClaudeUnavailableError(err)) throw err;
-        providerNotice = CLAUDE_FALLBACK_NOTICE;
+        if (selectedSpeaker !== "Claude" || (!isClaudeUnavailableError(err) && !isClaudeRefusalError(err))) throw err;
+        providerNotice = claudeFailureNotice(err);
         actualSpeaker = "GPT";
-        result = await callGPT(transcript, instruction + "\n\nClaude is temporarily unavailable due to its API usage limit. Continue as GPT only; do not impersonate Claude.", MAX_DEBATE_OUTPUT_TOKENS, context);
+        const reason = isClaudeRefusalError(err)
+          ? "Claude declined this turn. Continue independently as GPT using your own safety rules; do not impersonate Claude or speculate about Claude's answer."
+          : "Claude is temporarily unavailable due to its API usage limit. Continue as GPT only; do not impersonate Claude.";
+        result = await callGPT(transcript, instruction + "\n\n" + reason, MAX_DEBATE_OUTPUT_TOKENS, context);
       }
       const working = [...transcript, { speaker: actualSpeaker, text: result.text } as Turn];
       const gptTokens = actualSpeaker === "GPT" ? result.tokens : 0;
@@ -747,22 +764,25 @@ Deno.serve(async (req) => {
         const result = await finalizeStep(transcript, requestedSpeaker, body.finalizationState, context);
         return json({ ...result, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] } });
       } catch (err) {
-        if (!isClaudeUnavailableError(err)) throw err;
+        if (!isClaudeUnavailableError(err) && !isClaudeRefusalError(err)) throw err;
         const state = normalizeFinalizationState(body.finalizationState);
         let finalText = "";
         let gptTokens = 0;
         if (state?.stage === "review" && state.drafter === "GPT" && state.proposed.trim()) {
           finalText = state.proposed;
         } else {
-          const fallback = await callGPT(transcript, draftInstruction + "\n\nClaude is temporarily unavailable due to its API usage limit. Produce the strongest final output yourself. Do not claim cross-model consensus or Claude review.", MAX_FINAL_OUTPUT_TOKENS, context, "read_only");
+          const reason = isClaudeRefusalError(err)
+            ? "Claude declined participation in this finalization step. Produce the strongest final output yourself using your own safety rules. Do not claim cross-model consensus or Claude review."
+            : "Claude is temporarily unavailable due to its API usage limit. Produce the strongest final output yourself. Do not claim cross-model consensus or Claude review.";
+          const fallback = await callGPT(transcript, draftInstruction + "\n\n" + reason, MAX_FINAL_OUTPUT_TOKENS, context, "read_only");
           finalText = fallback.text;
           gptTokens = fallback.tokens;
         }
         return json({
-          transcript: [...transcript, { speaker: "Consensus", text: finalText } as Turn],
+          transcript: [...transcript, { speaker: "GPT", text: finalText } as Turn],
           nextSpeaker: "GPT",
-          providerNotice: CLAUDE_FALLBACK_NOTICE,
-          finalization: { status: "agreed", mode: "gpt_only", reason: "claude_unavailable", cycle: state?.cycle ?? 0, maxCycles: MAX_FINAL_REVIEW_CYCLES },
+          providerNotice: claudeFailureNotice(err) + " Finalization completed with GPT only; no cross-model consensus is claimed.",
+          finalization: { status: "completed", mode: "gpt_only", reason: isClaudeRefusalError(err) ? "claude_refused" : "claude_unavailable", cycle: state?.cycle ?? 0, maxCycles: MAX_FINAL_REVIEW_CYCLES },
           usage: { gptTokens, claudeTokens: 0, roundTokens: gptTokens },
           knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] }
         });
