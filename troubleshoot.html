@@ -12,7 +12,7 @@ header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top
 .layout{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:14px;padding:14px 14px 250px}.panel{border:1px solid var(--border);border-radius:16px;background:var(--panel);overflow:hidden}.panel-head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px}.panel-title{font-weight:800}.small{font-size:12px;color:var(--muted)}.session-meta{padding:12px 14px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:8px}.meta-box{background:var(--bg);border:1px solid var(--border);border-radius:11px;padding:9px}.meta-label{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:800}.meta-value{font-size:13px;margin-top:4px;white-space:pre-wrap}
 #messages{padding:14px;min-height:430px}.empty{color:var(--muted);padding:70px 20px;text-align:center;line-height:1.5}.turn{border:1px solid var(--border);border-radius:14px;background:var(--panel2);padding:12px 14px;margin-bottom:12px}.turn-head{font-size:11px;font-weight:850;color:#aac6e6;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}.turn.Dylan .turn-head{color:#e9c99e}.turn.Claude .turn-head{color:#d9b8ff}.turn-body{white-space:pre-wrap;line-height:1.55}
 .timeline{padding:10px;display:flex;flex-direction:column;gap:8px;max-height:70dvh;overflow:auto}.event{border:1px solid var(--border);border-radius:12px;padding:10px;background:var(--bg)}.event-top{display:flex;justify-content:space-between;gap:8px}.event-type{font-size:10px;font-weight:850;text-transform:uppercase;color:#b9d2ee}.event-seq{font-size:10px;color:var(--muted)}.event-content{font-size:13px;line-height:1.45;margin-top:5px;white-space:pre-wrap}.event-actor{font-size:10px;color:var(--muted);margin-top:5px}
-.composer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(11,15,20,.98);border-top:1px solid var(--border);padding:10px max(14px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));backdrop-filter:blur(20px)}.composer-inner{max-width:1180px;margin:auto}.compose-row{display:grid;grid-template-columns:170px 1fr;gap:8px}select,textarea,input{border:1px solid var(--border);border-radius:12px;background:var(--panel);color:var(--text);padding:11px;outline:none}textarea{min-height:72px;max-height:160px;resize:vertical;width:100%}.compose-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.status{font-size:12px;color:var(--muted);min-height:17px;margin-top:7px}.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.quick .btn{padding:6px 9px;font-size:11px}
+.composer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(11,15,20,.98);border-top:1px solid var(--border);padding:10px max(14px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));backdrop-filter:blur(20px)}.composer-inner{max-width:1180px;margin:auto}.compose-row{display:grid;grid-template-columns:170px 1fr;gap:8px}select,textarea,input{border:1px solid var(--border);border-radius:12px;background:var(--panel);color:var(--text);padding:11px;outline:none}textarea{min-height:72px;max-height:160px;resize:vertical;width:100%}.compose-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.status{font-size:12px;color:var(--muted);min-height:17px;margin-top:7px}.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.quick .btn{padding:6px 9px;font-size:11px}.evidence-tools{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}.evidence-tools .btn{padding:7px 10px;font-size:12px}.evidence-summary{font-size:11px;color:var(--muted);margin-left:auto}.source-strip{padding:10px 12px;border-bottom:1px solid var(--border);background:var(--panel2)}.source-strip-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}.source-list{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}.source-list::-webkit-scrollbar{display:none}.source-chip{flex:0 0 auto;max-width:250px;border:1px solid var(--border);border-radius:999px;padding:6px 9px;background:var(--bg);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.source-chip strong{color:#cfe2f8}.uploading{opacity:.6;pointer-events:none}
 .overlay{position:fixed;inset:0;z-index:100;background:rgba(7,10,14,.97);display:flex;align-items:center;justify-content:center;padding:20px}.overlay.hidden{display:none}.modal{width:min(620px,100%);border:1px solid var(--border);border-radius:18px;background:var(--panel);padding:18px}.modal h2{margin:0 0 6px}.field{margin-top:10px}.field label{font-size:11px;color:var(--muted);display:block;margin-bottom:5px}.field input,.field textarea{width:100%}.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
 @media(max-width:850px){.layout{grid-template-columns:1fr;padding-bottom:280px}.timeline{max-height:none}.compose-row{grid-template-columns:1fr}.session-meta{grid-template-columns:1fr 1fr}}
 </style>
@@ -46,6 +46,10 @@ header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top
   </section>
   <aside class="panel">
     <div class="panel-head"><div><div class="panel-title">Incident Log</div><div class="small">Chronological evidence trail</div></div></div>
+    <div class="source-strip">
+      <div class="source-strip-head"><div class="small"><strong>Attached evidence</strong></div><div class="small" id="sourceCount">0 sources</div></div>
+      <div class="source-list" id="sourceList"><span class="small">No transcripts or caption screenshots attached.</span></div>
+    </div>
     <div class="timeline" id="timeline"><div class="empty" style="padding:35px 12px">No events yet.</div></div>
   </aside>
 </div>
@@ -71,6 +75,13 @@ header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top
     <button class="btn" data-type="hypothesis">Hypothesis</button>
     <button class="btn" data-type="action">Action</button>
   </div>
+  <div class="evidence-tools">
+    <button class="btn" id="transcriptBtn">+ Zoom Transcript</button>
+    <button class="btn" id="captionBtn">+ Caption Screenshot</button>
+    <input id="transcriptInput" type="file" hidden multiple accept=".vtt,.srt,.txt,.md,.log,text/plain,text/vtt,application/x-subrip" />
+    <input id="captionInput" type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/*" />
+    <span class="evidence-summary" id="evidenceSummary">Evidence stays with this incident</span>
+  </div>
   <div class="compose-actions"><button class="btn primary" id="sendBtn">Send & Log</button><button class="btn" id="nextBtn">Next Diagnostic Step</button><button class="btn warn" id="setHypothesisBtn">Set Current Hypothesis</button></div>
   <div class="status" id="status"></div>
 </div></div>
@@ -79,14 +90,19 @@ header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top
 const BASE="https://ddxhpsgwxqoejghmsatg.supabase.co/functions/v1";
 const RELAY_URL=`${BASE}/relay`, TROUBLE_URL=`${BASE}/troubleshooting`;
 const STORAGE={secret:"thinktank_relay_secret",session:"thinktank_troubleshooting_session_v1",transcript:"thinktank_troubleshooting_transcript_v1",next:"thinktank_troubleshooting_next_v1",tokens:"thinktank_troubleshooting_tokens_v1"};
-let sessionId=localStorage.getItem(STORAGE.session)||"", transcript=safeParse(localStorage.getItem(STORAGE.transcript),[]), nextSpeaker=localStorage.getItem(STORAGE.next)||"GPT", totalTokens=Number(localStorage.getItem(STORAGE.tokens)||0), session=null, events=[],busy=false;
+let sessionId=localStorage.getItem(STORAGE.session)||"", transcript=safeParse(localStorage.getItem(STORAGE.transcript),[]), nextSpeaker=localStorage.getItem(STORAGE.next)||"GPT", totalTokens=Number(localStorage.getItem(STORAGE.tokens)||0), session=null, events=[],sources=[],busy=false;
 const $=id=>document.getElementById(id);
 function safeParse(v,f){try{return v?JSON.parse(v):f}catch{return f}}
 function secret(){return localStorage.getItem(STORAGE.secret)||""}
 function save(){localStorage.setItem(STORAGE.session,sessionId);localStorage.setItem(STORAGE.transcript,JSON.stringify(transcript));localStorage.setItem(STORAGE.next,nextSpeaker);localStorage.setItem(STORAGE.tokens,String(totalTokens))}
 function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
 async function post(url,payload){if(!secret()){$("setupOverlay").classList.remove("hidden");throw new Error("Relay secret required")}const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","x-relay-secret":secret()},body:JSON.stringify(payload)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d}
-function setBusy(v,msg=""){busy=v;if(msg)$("status").textContent=msg;$("sendBtn").disabled=v;$("nextBtn").disabled=v}
+function setBusy(v,msg=""){busy=v;if(msg)$("status").textContent=msg;$("sendBtn").disabled=v;$("nextBtn").disabled=v;$("transcriptBtn").disabled=v;$("captionBtn").disabled=v}
+function renderSources(){
+  $("sourceCount").textContent=`${sources.length} source${sources.length===1?"":"s"}`;
+  $("evidenceSummary").textContent=sources.length?`${sources.length} evidence source${sources.length===1?"":"s"} attached`:"Evidence stays with this incident";
+  $("sourceList").innerHTML=sources.length?sources.map(s=>`<span class="source-chip" title="${esc(s.file_name)}"><strong>${s.source_type==="caption_screenshot"?"Caption":"Transcript"}</strong> · ${esc(s.file_name)}</span>`).join(""):'<span class="small">No transcripts or caption screenshots attached.</span>';
+}
 function render(){
   $("sessionTitle").textContent=session?.title||"No active issue";
   $("sessionSub").textContent=session?(`${session.systems?.join(" → ")||"No systems listed"} · started ${new Date(session.started_at).toLocaleString()}`):"Start or resume a troubleshooting session.";
@@ -98,6 +114,7 @@ function render(){
   else{$("messages").innerHTML=transcript.map(t=>`<div class="turn ${esc(t.speaker)}"><div class="turn-head">${esc(t.speaker)}</div><div class="turn-body">${esc(t.text)}</div></div>`).join("")}
   if(!events.length){$("timeline").innerHTML='<div class="empty" style="padding:35px 12px">No events yet.</div>'}
   else{$("timeline").innerHTML=events.map(e=>`<div class="event"><div class="event-top"><span class="event-type">${esc(e.event_type)}</span><span class="event-seq">#${e.sequence}</span></div><div class="event-content">${esc(e.content)}</div><div class="event-actor">${esc(e.actor)} · ${new Date(e.created_at).toLocaleString()}</div></div>`).join("")}
+  renderSources();
 }
 function seedTranscriptFromIncident(){
   if(!session||!events.length)return;
@@ -105,9 +122,13 @@ function seedTranscriptFromIncident(){
   transcript=[{speaker:"Dylan",text:`Resume this troubleshooting incident. Use this structured incident log as prior context. Do not treat hypotheses as confirmed root cause.\n\nIssue: ${session.title}\nSymptom: ${session.symptom}\nFacility/process: ${[session.facility_key,session.process_area].filter(Boolean).join(" / ")}\nCurrent hypothesis: ${session.current_hypothesis||"None established"}\n\nINCIDENT LOG\n${lines.join("\n")}`}];
   nextSpeaker="GPT";totalTokens=0;save();
 }
+async function loadSources(){
+  if(!sessionId){sources=[];renderSources();return}
+  try{const d=await post(TROUBLE_URL,{action:"list_sources",sessionId});sources=Array.isArray(d.sources)?d.sources:[];renderSources()}catch(err){$("status").textContent=`Evidence load failed: ${err.message}`}
+}
 async function loadSession(){
   if(!sessionId)return render();
-  try{const d=await post(TROUBLE_URL,{action:"get",sessionId});session=d.session;events=d.events||[];render()}catch(err){$("status").textContent=`Load failed: ${err.message}`}
+  try{const d=await post(TROUBLE_URL,{action:"get",sessionId});session=d.session;events=d.events||[];await loadSources();render()}catch(err){$("status").textContent=`Load failed: ${err.message}`}
 }
 async function openSessions(){
   try{
@@ -130,13 +151,13 @@ async function createIssue(){
   const title=$("issueTitle").value.trim(),symptom=$("issueSymptom").value.trim();if(!title||!symptom)return;
   try{
     const d=await post(TROUBLE_URL,{action:"create",title,symptom,facilityKey:$("issueFacility").value.trim(),processArea:$("issueProcess").value.trim(),systems:$("issueSystems").value.split(",").map(x=>x.trim()).filter(Boolean)});
-    session=d.session;sessionId=session.id;events=[];transcript=[{speaker:"Dylan",text:`Troubleshooting issue: ${title}\n\nInitial symptom: ${symptom}`}];nextSpeaker="GPT";totalTokens=0;save();$("newOverlay").classList.add("hidden");await loadSession();
+    session=d.session;sessionId=session.id;events=[];sources=[];transcript=[{speaker:"Dylan",text:`Troubleshooting issue: ${title}\n\nInitial symptom: ${symptom}`}];nextSpeaker="GPT";totalTokens=0;save();$("newOverlay").classList.add("hidden");await loadSession();
     $("question").value="";$("status").textContent="Issue started. Add the latest observation or test result.";
   }catch(err){$("status").textContent=`Create failed: ${err.message}`}
 }
 async function relay(payload,msg){
   setBusy(true,msg);
-  try{const d=await post(RELAY_URL,{...payload,helperMode:"troubleshoot"});transcript=Array.isArray(d.transcript)?d.transcript:transcript;nextSpeaker=d.nextSpeaker==="Claude"?"Claude":"GPT";totalTokens+=Number(d?.usage?.roundTokens||0);save();render();setTimeout(()=>window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"}),40);return d}
+  try{const d=await post(RELAY_URL,{...payload,helperMode:"troubleshoot",troubleshootingSessionId:sessionId});transcript=Array.isArray(d.transcript)?d.transcript:transcript;nextSpeaker=d.nextSpeaker==="Claude"?"Claude":"GPT";totalTokens+=Number(d?.usage?.roundTokens||0);save();render();setTimeout(()=>window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"}),40);return d}
   catch(err){$("status").textContent=`Error: ${err.message}`;return null}
   finally{setBusy(false)}
 }
@@ -159,6 +180,64 @@ async function nextStep(){
   for(const t of transcript.slice(before).filter(t=>t.speaker==="GPT"||t.speaker==="Claude"))await append("analysis",t.speaker,t.text);
   await loadSession();$("status").textContent="Next diagnostic step logged.";
 }
+function transcriptSourceType(file){
+  const name=String(file?.name||"").toLowerCase();
+  return name.endsWith(".vtt")||name.endsWith(".srt")?"zoom_transcript":"text_transcript";
+}
+async function uploadTranscriptFiles(fileList){
+  if(busy||!sessionId)return;
+  const files=Array.from(fileList||[]);
+  if(!files.length)return;
+  setBusy(true,`Importing ${files.length} transcript file${files.length===1?"":"s"}...`);
+  try{
+    for(let i=0;i<files.length;i++){
+      const file=files[i];
+      $("status").textContent=`Reading transcript ${i+1}/${files.length}: ${file.name}`;
+      const text=await file.text();
+      await post(TROUBLE_URL,{action:"ingest_text_source",sessionId,fileName:file.name,mimeType:file.type||"text/plain",sourceType:transcriptSourceType(file),text});
+    }
+    await loadSession();
+    $("status").textContent=`Imported ${files.length} transcript file${files.length===1?"":"s"}. Think Tank can now use them as incident evidence.`;
+  }catch(err){$("status").textContent=`Transcript import failed: ${err.message}`}
+  finally{setBusy(false);$("transcriptInput").value=""}
+}
+function fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||""));r.onerror=()=>reject(r.error||new Error("file read failed"));r.readAsDataURL(file)});
+}
+async function prepareCaptionImage(file){
+  const original=await fileToDataUrl(file);
+  if(file.size<=7_500_000){
+    const img=await new Promise((resolve,reject)=>{const el=new Image();el.onload=()=>resolve(el);el.onerror=()=>reject(new Error("image decode failed"));el.src=original});
+    const max=Math.max(img.naturalWidth,img.naturalHeight);
+    if(max<=2200)return original;
+    const scale=2200/max,canvas=document.createElement("canvas");
+    canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);
+    canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
+    return canvas.toDataURL("image/jpeg",0.94);
+  }
+  const img=await new Promise((resolve,reject)=>{const el=new Image();el.onload=()=>resolve(el);el.onerror=()=>reject(new Error("image decode failed"));el.src=original});
+  const max=Math.max(img.naturalWidth,img.naturalHeight),scale=Math.min(1,2200/max),canvas=document.createElement("canvas");
+  canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);
+  canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
+  return canvas.toDataURL("image/jpeg",0.9);
+}
+async function uploadCaptionFiles(fileList){
+  if(busy||!sessionId)return;
+  const files=Array.from(fileList||[]);
+  if(!files.length)return;
+  setBusy(true,`Reading ${files.length} caption screenshot${files.length===1?"":"s"}...`);
+  try{
+    for(let i=0;i<files.length;i++){
+      const file=files[i];
+      $("status").textContent=`Extracting captions ${i+1}/${files.length}: ${file.name}`;
+      const dataUrl=await prepareCaptionImage(file);
+      await post(TROUBLE_URL,{action:"ingest_caption_image",sessionId,fileName:file.name,dataUrl});
+    }
+    await loadSession();
+    $("status").textContent=`Imported ${files.length} caption screenshot${files.length===1?"":"s"}. Extracted captions are now available to the diagnostic chat.`;
+  }catch(err){$("status").textContent=`Caption import failed: ${err.message}`}
+  finally{setBusy(false);$("captionInput").value=""}
+}
 async function setHypothesis(){
   if(!sessionId)return;const value=prompt("Current working hypothesis:",session?.current_hypothesis||"");if(value===null||!value.trim())return;
   await append("hypothesis","Dylan",value.trim(),{currentHypothesis:value.trim()});await loadSession();$("status").textContent="Current hypothesis updated.";
@@ -168,7 +247,7 @@ async function resolve(){
   try{const d=await post(TROUBLE_URL,{action:"resolve",sessionId,rootCause:root,resolution,resolutionSummary:""});session=d.session;await loadSession();$("status").textContent="Issue marked resolved and the resolution was preserved in the incident log."}catch(err){$("status").textContent=`Resolve failed: ${err.message}`}
 }
 document.querySelectorAll("[data-type]").forEach(b=>b.addEventListener("click",()=>{$("eventType").value=b.dataset.type;$("question").focus()}));
-$("openBtn").onclick=openSessions;$("closeOpenBtn").onclick=()=>$("openOverlay").classList.add("hidden");$("newBtn").onclick=()=>$("newOverlay").classList.remove("hidden");$("cancelNewBtn").onclick=()=>$("newOverlay").classList.add("hidden");$("createIssueBtn").onclick=createIssue;$("sendBtn").onclick=send;$("nextBtn").onclick=nextStep;$("setHypothesisBtn").onclick=setHypothesis;$("resolveBtn").onclick=resolve;$("refreshBtn").onclick=loadSession;
+$("transcriptBtn").onclick=()=>{if(!sessionId){$("status").textContent="Start or open an issue first.";return}$("transcriptInput").click()};$("captionBtn").onclick=()=>{if(!sessionId){$("status").textContent="Start or open an issue first.";return}$("captionInput").click()};$("transcriptInput").onchange=e=>uploadTranscriptFiles(e.target.files);$("captionInput").onchange=e=>uploadCaptionFiles(e.target.files);$("openBtn").onclick=openSessions;$("closeOpenBtn").onclick=()=>$("openOverlay").classList.add("hidden");$("newBtn").onclick=()=>$("newOverlay").classList.remove("hidden");$("cancelNewBtn").onclick=()=>$("newOverlay").classList.add("hidden");$("createIssueBtn").onclick=createIssue;$("sendBtn").onclick=send;$("nextBtn").onclick=nextStep;$("setHypothesisBtn").onclick=setHypothesis;$("resolveBtn").onclick=resolve;$("refreshBtn").onclick=loadSession;
 $("saveSecretBtn").onclick=async()=>{const v=$("secretInput").value.trim();if(!v)return;localStorage.setItem(STORAGE.secret,v);$("secretInput").value="";$("setupOverlay").classList.add("hidden");await loadSession()};
 $("question").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")send()});
 if(!secret())$("setupOverlay").classList.remove("hidden");if(!sessionId)$("newOverlay").classList.remove("hidden");render();if(secret()&&sessionId)loadSession();
