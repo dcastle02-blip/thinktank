@@ -336,6 +336,53 @@ function recentSearchBasis(transcript: Turn[], extra = "") {
   return [...transcript.slice(-6).map((turn) => turn.text), extra].join("\n").slice(-12_000);
 }
 
+async function getTroubleshootingSourceContext(sessionId: unknown, searchBasis: string) {
+  const id=typeof sessionId==="string" ? sessionId.trim() : "";
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) return "";
+  const {data:sources,error:sErr}=await supabase
+    .from("thinktank_troubleshooting_sources")
+    .select("id,source_type,file_name,created_at")
+    .eq("session_id",id)
+    .eq("status","ready")
+    .order("created_at",{ascending:false})
+    .limit(50);
+  if(sErr || !sources?.length) return "";
+
+  const sourceIds=sources.map((s:any)=>s.id);
+  const {data:chunks,error:cErr}=await supabase
+    .from("thinktank_troubleshooting_source_chunks")
+    .select("source_id,chunk_index,content")
+    .in("source_id",sourceIds)
+    .order("chunk_index",{ascending:true})
+    .limit(500);
+  if(cErr || !chunks?.length) return "";
+
+  const terms=[...new Set((searchBasis.toLowerCase().match(/[a-z0-9_]{4,}/g) ?? []).filter((w)=>!STOPWORDS.has(w)))].slice(-30);
+  const sourceMap=new Map(sources.map((s:any)=>[s.id,s]));
+  const ranked=(chunks as any[]).map((chunk:any)=>{
+    const lower=String(chunk.content||"").toLowerCase();
+    const termScore=terms.reduce((sum,term)=>sum+(lower.includes(term)?1:0),0);
+    const source=sourceMap.get(chunk.source_id) as any;
+    const recencyScore=source ? Math.max(0,1-(Date.now()-new Date(source.created_at).getTime())/(1000*60*60*24*30)) : 0;
+    return {chunk,source,score:termScore*3+recencyScore-(Number(chunk.chunk_index)||0)*0.01};
+  }).sort((a,b)=>b.score-a.score);
+
+  let total=0;
+  const selected:string[]=[];
+  for(const row of ranked){
+    if(!row.source) continue;
+    const block=`[INCIDENT SOURCE: ${row.source.file_name} | type ${row.source.source_type} | section ${Number(row.chunk.chunk_index)+1}]\n${row.chunk.content}`;
+    if(total+block.length>24_000) continue;
+    selected.push(block); total+=block.length;
+    if(selected.length>=10) break;
+  }
+  if(!selected.length) return "";
+  return `TROUBLESHOOTING INCIDENT SOURCES
+These are uploaded incident sources tied to the active troubleshooting session, such as Zoom transcripts or extracted closed captions. Treat them as evidence, not automatically as confirmed root cause. Preserve speaker attribution and distinguish participant statements, observations, hypotheses, actions, and direct system evidence. Screenshot caption text may contain [unclear] where extraction was uncertain.
+
+${selected.join("\n\n---\n\n")}`;
+}
+
 // Attachments live in the chat transcript, never in the global knowledge index.
 // Select bounded, labeled excerpts for every turn, including Next and Finalize.
 function chatAttachmentContext(transcript: Turn[], searchBasis: string) {
@@ -716,8 +763,12 @@ Deno.serve(async (req) => {
       const attachments = normalizeAttachments(body.attachments);
       if (!message && attachments.length === 0) return json({ error: "message is required" }, 400);
       const working: Turn[] = [...transcript, { speaker: "Dylan", text: message || "Please review the attached file(s).", attachments: attachments.length ? attachments : undefined }];
-      const knowledge = await getKnowledgeContext(recentSearchBasis(working, message));
-      const context = `${knowledge.context}\n\n${chatAttachmentContext(working, recentSearchBasis(working, message))}`;
+      const searchBasis=recentSearchBasis(working, message);
+      const [knowledge,troubleContext] = await Promise.all([
+        getKnowledgeContext(searchBasis),
+        getTroubleshootingSourceContext(body.troubleshootingSessionId,searchBasis)
+      ]);
+      const context = [knowledge.context,troubleContext,chatAttachmentContext(working,searchBasis)].filter(Boolean).join("\n\n====\n\n");
       let gptTokens = 0, claudeTokens = 0;
       let providerNotice = "";
       const plannedRoute = normalizeRoute(body.route, requestedSpeaker, 2);
@@ -752,8 +803,12 @@ Deno.serve(async (req) => {
 
     if (action === "next") {
       if (!transcript.length) return json({ error: "start a conversation before requesting the next response" }, 400);
-      const knowledge = await getKnowledgeContext(recentSearchBasis(transcript));
-      const context = `${knowledge.context}\n\n${chatAttachmentContext(transcript, recentSearchBasis(transcript))}`;
+      const searchBasis=recentSearchBasis(transcript);
+      const [knowledge,troubleContext] = await Promise.all([
+        getKnowledgeContext(searchBasis),
+        getTroubleshootingSourceContext(body.troubleshootingSessionId,searchBasis)
+      ]);
+      const context = [knowledge.context,troubleContext,chatAttachmentContext(transcript,searchBasis)].filter(Boolean).join("\n\n====\n\n");
       const instruction = ["Continue the discussion from the exact point it currently stands. Do not pretend Dylan spoke again. Make the most useful next contribution. You may extend a sound idea, add missing analysis, correct a material issue, reframe the problem, or briefly confirm something that is already right. Do not manufacture disagreement or repeat points that are already settled.", helper].filter(Boolean).join("\n\n");
       const nextRoute = normalizeRoute(body.route, requestedSpeaker, 1);
       const selectedSpeaker = nextRoute[0] || requestedSpeaker;
@@ -779,8 +834,12 @@ Deno.serve(async (req) => {
 
     if (action === "finalize_step" || action === "finalize") {
       if (!transcript.length) return json({ error: "start a conversation before finalizing" }, 400);
-      const knowledge = await getKnowledgeContext(recentSearchBasis(transcript));
-      const context = [`${knowledge.context}\n\n${chatAttachmentContext(transcript, recentSearchBasis(transcript))}`, helper].filter(Boolean).join("\n\n");
+      const searchBasis=recentSearchBasis(transcript);
+      const [knowledge,troubleContext] = await Promise.all([
+        getKnowledgeContext(searchBasis),
+        getTroubleshootingSourceContext(body.troubleshootingSessionId,searchBasis)
+      ]);
+      const context = [knowledge.context,troubleContext,chatAttachmentContext(transcript,searchBasis),helper].filter(Boolean).join("\n\n====\n\n");
       try {
         const result = await finalizeStep(transcript, requestedSpeaker, body.finalizationState, context);
         return json({ ...result, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] } });
