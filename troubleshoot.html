@@ -48,7 +48,7 @@ header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top
     <div class="panel-head"><div><div class="panel-title">Incident Log</div><div class="small">Chronological evidence trail</div></div></div>
     <div class="source-strip">
       <div class="source-strip-head"><div class="small"><strong>Attached evidence</strong></div><div class="small" id="sourceCount">0 sources</div></div>
-      <div class="source-list" id="sourceList"><span class="small">No transcripts or caption screenshots attached.</span></div>
+      <div class="source-list" id="sourceList"><span class="small">No incident evidence attached.</span></div>
     </div>
     <div class="timeline" id="timeline"><div class="empty" style="padding:35px 12px">No events yet.</div></div>
   </aside>
@@ -78,14 +78,19 @@ header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top
   <div class="evidence-tools">
     <button class="btn" id="transcriptBtn">+ Zoom Transcript</button>
     <button class="btn" id="captionBtn">+ Caption Screenshot</button>
+    <button class="btn" id="evidenceFileBtn">+ Files / ZIP</button>
     <input id="transcriptInput" type="file" hidden multiple accept=".vtt,.srt,.txt,.md,.log,text/plain,text/vtt,application/x-subrip" />
     <input id="captionInput" type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/*" />
+    <input id="evidenceFileInput" type="file" hidden multiple accept=".txt,.md,.csv,.json,.sql,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.toml,.docx,.xlsx,.zip,text/plain,text/markdown,text/csv,application/json,application/zip,application/x-zip-compressed,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
     <span class="evidence-summary" id="evidenceSummary">Evidence stays with this incident</span>
   </div>
   <div class="compose-actions"><button class="btn primary" id="sendBtn">Send & Log</button><button class="btn" id="nextBtn">Next Diagnostic Step</button><button class="btn warn" id="setHypothesisBtn">Set Current Hypothesis</button></div>
   <div class="status" id="status"></div>
 </div></div>
 
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.3/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.2/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 const BASE="https://ddxhpsgwxqoejghmsatg.supabase.co/functions/v1";
 const RELAY_URL=`${BASE}/relay`, TROUBLE_URL=`${BASE}/troubleshooting`;
@@ -97,11 +102,11 @@ function secret(){return localStorage.getItem(STORAGE.secret)||""}
 function save(){localStorage.setItem(STORAGE.session,sessionId);localStorage.setItem(STORAGE.transcript,JSON.stringify(transcript));localStorage.setItem(STORAGE.next,nextSpeaker);localStorage.setItem(STORAGE.tokens,String(totalTokens))}
 function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
 async function post(url,payload){if(!secret()){$("setupOverlay").classList.remove("hidden");throw new Error("Relay secret required")}const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","x-relay-secret":secret()},body:JSON.stringify(payload)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d}
-function setBusy(v,msg=""){busy=v;if(msg)$("status").textContent=msg;$("sendBtn").disabled=v;$("nextBtn").disabled=v;$("transcriptBtn").disabled=v;$("captionBtn").disabled=v}
+function setBusy(v,msg=""){busy=v;if(msg)$("status").textContent=msg;$("sendBtn").disabled=v;$("nextBtn").disabled=v;$("transcriptBtn").disabled=v;$("captionBtn").disabled=v;$("evidenceFileBtn").disabled=v}
 function renderSources(){
   $("sourceCount").textContent=`${sources.length} source${sources.length===1?"":"s"}`;
   $("evidenceSummary").textContent=sources.length?`${sources.length} evidence source${sources.length===1?"":"s"} attached`:"Evidence stays with this incident";
-  $("sourceList").innerHTML=sources.length?sources.map(s=>`<span class="source-chip" title="${esc(s.file_name)}"><strong>${s.source_type==="caption_screenshot"?"Caption":"Transcript"}</strong> · ${esc(s.file_name)}</span>`).join(""):'<span class="small">No transcripts or caption screenshots attached.</span>';
+  $("sourceList").innerHTML=sources.length?sources.map(s=>{const label=s.source_type==="caption_screenshot"?"Caption":s.source_type==="zoom_transcript"||s.source_type==="text_transcript"?"Transcript":"File";return `<span class="source-chip" title="${esc(s.file_name)}"><strong>${label}</strong> · ${esc(s.file_name)}</span>`}).join(""):'<span class="small">No incident evidence attached.</span>';
 }
 function render(){
   $("sessionTitle").textContent=session?.title||"No active issue";
@@ -238,6 +243,124 @@ async function uploadCaptionFiles(fileList){
   }catch(err){$("status").textContent=`Caption import failed: ${err.message}`}
   finally{setBusy(false);$("captionInput").value=""}
 }
+
+const INCIDENT_TEXT_EXTENSIONS=new Set(["txt","md","csv","json","sql","js","ts","py","html","css","xml","yaml","yml","log","ini","cfg","conf","toml"]);
+const INCIDENT_WORD_EXTENSIONS=new Set(["docx"]);
+const INCIDENT_SHEET_EXTENSIONS=new Set(["xlsx"]);
+const INCIDENT_ARCHIVE_EXTENSIONS=new Set(["zip"]);
+const MAX_INCIDENT_FILES=500;
+const MAX_INCIDENT_ARCHIVE_DEPTH=3;
+const MAX_INCIDENT_EXTRACTED_BYTES=250*1024*1024;
+const MAX_INCIDENT_TEXT_CHARS=1_400_000;
+function incidentExt(name){return (String(name||"").split(".").pop()||"").toLowerCase()}
+function incidentMime(name){const ext=incidentExt(name);if(ext==="docx")return"application/vnd.openxmlformats-officedocument.wordprocessingml.document";if(ext==="xlsx")return"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";if(ext==="json")return"application/json";if(ext==="csv")return"text/csv";if(ext==="md")return"text/markdown";if(ext==="html")return"text/html";return"text/plain"}
+function isIncidentSupported(name){const ext=incidentExt(name);return INCIDENT_TEXT_EXTENSIONS.has(ext)||INCIDENT_WORD_EXTENSIONS.has(ext)||INCIDENT_SHEET_EXTENSIONS.has(ext)||INCIDENT_ARCHIVE_EXTENSIONS.has(ext)}
+async function normalizeIncidentXlsx(buffer){
+  if(!window.JSZip||typeof window.JSZip.loadAsync!=="function")return buffer;
+  const zip=await window.JSZip.loadAsync(buffer),names=Object.keys(zip.files);
+  if(!names.some(name=>name.includes("\\")))return buffer;
+  const clean=new window.JSZip();
+  for(const [name,entry] of Object.entries(zip.files)){
+    const normalized=name.replaceAll("\\","/");
+    if(entry.dir)clean.folder(normalized.replace(/\/$/,""));
+    else clean.file(normalized,await entry.async("uint8array"));
+  }
+  return await clean.generateAsync({type:"arraybuffer",compression:"DEFLATE"});
+}
+async function extractIncidentText(item){
+  const ext=incidentExt(item.name);
+  if(INCIDENT_WORD_EXTENSIONS.has(ext)){
+    if(!window.mammoth||typeof window.mammoth.extractRawText!=="function")throw new Error("Word parser failed to load.");
+    const result=await window.mammoth.extractRawText({arrayBuffer:item.buffer});
+    const value=String(result?.value||"").replace(/\r\n/g,"\n").trim();
+    if(!value)throw new Error("No readable text in Word file.");
+    return value;
+  }
+  if(INCIDENT_SHEET_EXTENSIONS.has(ext)){
+    if(!window.XLSX||typeof window.XLSX.read!=="function")throw new Error("Excel parser failed to load.");
+    const normalized=await normalizeIncidentXlsx(item.buffer);
+    const workbook=window.XLSX.read(normalized,{type:"array",cellDates:true});
+    const parts=[];
+    for(const sheetName of workbook.SheetNames){
+      const csv=window.XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName],{blankrows:false});
+      if(csv.trim())parts.push(`### SHEET: ${sheetName}\n${csv.trim()}`);
+    }
+    const value=parts.join("\n\n").trim();
+    if(!value)throw new Error("No readable cells in Excel file.");
+    return value;
+  }
+  const value=new TextDecoder("utf-8",{fatal:false}).decode(item.buffer).trim();
+  if(value.slice(0,10000).includes("\u0000"))throw new Error("Binary file is not supported as incident text.");
+  return value;
+}
+async function expandIncidentArchive(buffer,archiveName,depth,state){
+  if(depth>MAX_INCIDENT_ARCHIVE_DEPTH)throw new Error("Archive nesting is too deep.");
+  if(!window.JSZip||typeof window.JSZip.loadAsync!=="function")throw new Error("ZIP parser failed to load.");
+  const zip=await window.JSZip.loadAsync(buffer),out=[];
+  for(const [entryName,entry] of Object.entries(zip.files)){
+    if(entry.dir||entryName.startsWith("__MACOSX/")||entryName.endsWith("/.DS_Store"))continue;
+    const ext=incidentExt(entryName);
+    if(!isIncidentSupported(entryName))continue;
+    const entryBuffer=await entry.async("arraybuffer");
+    state.bytes+=entryBuffer.byteLength;
+    if(state.bytes>MAX_INCIDENT_EXTRACTED_BYTES)throw new Error("Archive extraction exceeds 250 MB.");
+    const fullName=`${archiveName}/${entryName}`;
+    if(INCIDENT_ARCHIVE_EXTENSIONS.has(ext)){
+      out.push(...await expandIncidentArchive(entryBuffer,fullName,depth+1,state));
+    }else{
+      out.push({name:fullName,type:incidentMime(entryName),buffer:entryBuffer,size:entryBuffer.byteLength});
+      state.count++;
+    }
+    if(state.count>MAX_INCIDENT_FILES)throw new Error("Archive contains more than 500 supported files.");
+  }
+  return out;
+}
+async function expandIncidentSelection(fileList){
+  const out=[],state={count:0,bytes:0};
+  for(const file of Array.from(fileList||[])){
+    if(!isIncidentSupported(file.name))continue;
+    const buffer=await file.arrayBuffer();
+    if(INCIDENT_ARCHIVE_EXTENSIONS.has(incidentExt(file.name)))out.push(...await expandIncidentArchive(buffer,file.name,1,state));
+    else{out.push({name:file.name,type:file.type||incidentMime(file.name),buffer,size:file.size});state.count++}
+  }
+  return out;
+}
+async function ingestIncidentText(name,text,mimeType){
+  if(!text.trim())return 0;
+  let offset=0,part=1,count=0;
+  while(offset<text.length){
+    const slice=text.slice(offset,offset+MAX_INCIDENT_TEXT_CHARS);
+    const partName=text.length>MAX_INCIDENT_TEXT_CHARS?`${name} [part ${part}]`:name;
+    await post(TROUBLE_URL,{action:"ingest_text_source",sessionId,fileName:partName,mimeType:"text/plain",sourceType:"other",text:slice});
+    offset+=slice.length;part++;count++;
+  }
+  return count;
+}
+async function uploadEvidenceFiles(fileList){
+  if(busy||!sessionId)return;
+  const files=Array.from(fileList||[]);
+  if(!files.length)return;
+  setBusy(true,"Reading incident files / ZIP...");
+  try{
+    const items=await expandIncidentSelection(files);
+    if(!items.length){$("status").textContent="No supported files were found in that selection.";return}
+    let imported=0,failed=0;
+    for(let i=0;i<items.length;i++){
+      const item=items[i];
+      $("status").textContent=`Importing evidence ${i+1}/${items.length}: ${item.name}`;
+      try{
+        const extracted=await extractIncidentText(item);
+        imported+=await ingestIncidentText(item.name,extracted,item.type);
+      }catch(err){
+        failed++;
+        console.error("Incident evidence import failed",item.name,err);
+      }
+    }
+    await loadSession();
+    $("status").textContent=`Incident evidence imported: ${imported} source${imported===1?"":"s"}; ${failed} failed. These files are now available to troubleshooting AI.`;
+  }catch(err){$("status").textContent=`Evidence import failed: ${err.message}`}
+  finally{setBusy(false);$("evidenceFileInput").value=""}
+}
 async function setHypothesis(){
   if(!sessionId)return;const value=prompt("Current working hypothesis:",session?.current_hypothesis||"");if(value===null||!value.trim())return;
   await append("hypothesis","Dylan",value.trim(),{currentHypothesis:value.trim()});await loadSession();$("status").textContent="Current hypothesis updated.";
@@ -247,7 +370,7 @@ async function resolve(){
   try{const d=await post(TROUBLE_URL,{action:"resolve",sessionId,rootCause:root,resolution,resolutionSummary:""});session=d.session;await loadSession();$("status").textContent="Issue marked resolved and the resolution was preserved in the incident log."}catch(err){$("status").textContent=`Resolve failed: ${err.message}`}
 }
 document.querySelectorAll("[data-type]").forEach(b=>b.addEventListener("click",()=>{$("eventType").value=b.dataset.type;$("question").focus()}));
-$("transcriptBtn").onclick=()=>{if(!sessionId){$("status").textContent="Start or open an issue first.";return}$("transcriptInput").click()};$("captionBtn").onclick=()=>{if(!sessionId){$("status").textContent="Start or open an issue first.";return}$("captionInput").click()};$("transcriptInput").onchange=e=>uploadTranscriptFiles(e.target.files);$("captionInput").onchange=e=>uploadCaptionFiles(e.target.files);$("openBtn").onclick=openSessions;$("closeOpenBtn").onclick=()=>$("openOverlay").classList.add("hidden");$("newBtn").onclick=()=>$("newOverlay").classList.remove("hidden");$("cancelNewBtn").onclick=()=>$("newOverlay").classList.add("hidden");$("createIssueBtn").onclick=createIssue;$("sendBtn").onclick=send;$("nextBtn").onclick=nextStep;$("setHypothesisBtn").onclick=setHypothesis;$("resolveBtn").onclick=resolve;$("refreshBtn").onclick=loadSession;
+$("transcriptBtn").onclick=()=>{if(!sessionId){$("status").textContent="Start or open an issue first.";return}$("transcriptInput").click()};$("captionBtn").onclick=()=>{if(!sessionId){$("status").textContent="Start or open an issue first.";return}$("captionInput").click()};$("evidenceFileBtn").onclick=()=>{if(!sessionId){$("status").textContent="Start or open an issue first.";return}$("evidenceFileInput").click()};$("transcriptInput").onchange=e=>uploadTranscriptFiles(e.target.files);$("captionInput").onchange=e=>uploadCaptionFiles(e.target.files);$("evidenceFileInput").onchange=e=>uploadEvidenceFiles(e.target.files);$("openBtn").onclick=openSessions;$("closeOpenBtn").onclick=()=>$("openOverlay").classList.add("hidden");$("newBtn").onclick=()=>$("newOverlay").classList.remove("hidden");$("cancelNewBtn").onclick=()=>$("newOverlay").classList.add("hidden");$("createIssueBtn").onclick=createIssue;$("sendBtn").onclick=send;$("nextBtn").onclick=nextStep;$("setHypothesisBtn").onclick=setHypothesis;$("resolveBtn").onclick=resolve;$("refreshBtn").onclick=loadSession;
 $("saveSecretBtn").onclick=async()=>{const v=$("secretInput").value.trim();if(!v)return;localStorage.setItem(STORAGE.secret,v);$("secretInput").value="";$("setupOverlay").classList.add("hidden");await loadSession()};
 $("question").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")send()});
 if(!secret())$("setupOverlay").classList.remove("hidden");if(!sessionId)$("newOverlay").classList.remove("hidden");render();if(secret()&&sessionId)loadSession();
