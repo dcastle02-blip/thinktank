@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#0b0f14" />
+<title>Think Tank Projects</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0f14;--panel:#111821;--panel2:#151e29;--border:#263241;--text:#edf3f8;--muted:#91a0af;--accent:#dbeafe;--accentText:#08111d;--good:#174536;--warn:#6d4b25;--danger:#582929}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer}.app{max-width:1280px;margin:auto;min-height:100dvh}
+header{position:sticky;top:0;z-index:30;padding:max(13px,env(safe-area-inset-top)) 15px 11px;background:rgba(11,15,20,.97);border-bottom:1px solid var(--border);backdrop-filter:blur(18px)}.top{display:flex;align-items:center;justify-content:space-between;gap:12px}.title{font-size:20px;font-weight:850}.sub{font-size:12px;color:var(--muted);margin-top:4px}.actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.btn{border:1px solid var(--border);border-radius:11px;background:var(--panel2);color:var(--text);padding:9px 12px;font-weight:700}.btn.primary{background:var(--accent);color:var(--accentText);border-color:transparent}.btn.good{background:var(--good)}.btn.warn{background:var(--warn)}a.btn{text-decoration:none}
+.layout{display:grid;grid-template-columns:270px minmax(0,1fr);gap:12px;padding:12px 12px 210px}.panel{border:1px solid var(--border);border-radius:16px;background:var(--panel);overflow:hidden}.panel-head{padding:11px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px}.panel-title{font-weight:800}.small{font-size:12px;color:var(--muted)}
+.project-list{padding:8px;display:flex;flex-direction:column;gap:7px;max-height:calc(100dvh - 120px);overflow:auto}.project-item{width:100%;text-align:left;border:1px solid var(--border);border-radius:12px;background:var(--bg);color:var(--text);padding:10px}.project-item.active{border-color:#7895b4;background:#172331}.project-name{font-weight:800}.project-meta{font-size:11px;color:var(--muted);margin-top:4px}
+.content{display:flex;flex-direction:column;gap:12px}.hero{padding:14px}.hero-grid{display:grid;grid-template-columns:2fr 1fr;gap:10px}.field{margin-top:9px}.field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800;margin-bottom:5px}.field input,.field textarea,.field select{width:100%;border:1px solid var(--border);border-radius:11px;background:var(--bg);color:var(--text);padding:10px;outline:none}.field textarea{min-height:70px;resize:vertical}.overview-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.section-body{padding:11px}.task-add{display:grid;grid-template-columns:1fr 110px auto;gap:7px}.task-list,.event-list,.source-list{display:flex;flex-direction:column;gap:7px;margin-top:9px}.task{border:1px solid var(--border);border-radius:11px;background:var(--bg);padding:9px}.task-top{display:flex;align-items:center;gap:7px}.task-title{flex:1;font-weight:700}.task select{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:5px}.task-meta{font-size:11px;color:var(--muted);margin-top:4px}.event,.source{border:1px solid var(--border);border-radius:11px;background:var(--bg);padding:9px}.event-type{font-size:10px;text-transform:uppercase;font-weight:850;color:#bad2ed}.event-text{font-size:13px;line-height:1.45;margin-top:4px;white-space:pre-wrap}.event-meta,.source-meta{font-size:10px;color:var(--muted);margin-top:4px}.source-name{font-weight:750;font-size:13px;word-break:break-word}
+.note-row{display:grid;grid-template-columns:120px 1fr auto;gap:7px}.note-row select,.note-row textarea{border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);padding:9px}.note-row textarea{min-height:58px;resize:vertical}
+.evidence-tools{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+.chat{padding:11px}.chat-log{min-height:240px;max-height:520px;overflow:auto;padding:2px}.turn{border:1px solid var(--border);border-radius:12px;background:var(--bg);padding:10px 11px;margin-bottom:8px}.turn-head{font-size:10px;font-weight:850;text-transform:uppercase;color:#abc9e8;margin-bottom:5px}.turn.Claude .turn-head{color:#d9b8ff}.turn.Dylan .turn-head{color:#e7c59e}.turn-body{white-space:pre-wrap;line-height:1.5;font-size:14px}.chat-compose{display:grid;grid-template-columns:1fr auto;gap:7px;margin-top:8px}.chat-compose textarea{min-height:70px;resize:vertical;border:1px solid var(--border);border-radius:11px;background:var(--bg);color:var(--text);padding:10px}.status{font-size:12px;color:var(--muted);min-height:17px;margin-top:7px}
+.overlay{position:fixed;inset:0;z-index:100;background:rgba(7,10,14,.97);display:flex;align-items:center;justify-content:center;padding:20px}.overlay.hidden{display:none}.modal{width:min(620px,100%);border:1px solid var(--border);border-radius:18px;background:var(--panel);padding:18px}.modal h2{margin:0 0 6px}.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:13px}
+.empty{padding:28px 14px;text-align:center;color:var(--muted);line-height:1.5}
+@media(max-width:850px){.layout{grid-template-columns:1fr;padding-bottom:210px}.project-list{max-height:250px}.hero-grid,.grid2{grid-template-columns:1fr}.task-add,.note-row,.chat-compose{grid-template-columns:1fr}.actions{justify-content:flex-start}.top{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body>
+<div id="setupOverlay" class="overlay hidden"><div class="modal" style="max-width:450px"><h2>Connect Think Tank</h2><div class="small">Enter the same relay secret used by Think Tank. It stays in this browser.</div><div class="field"><input id="secretInput" type="password" placeholder="Relay secret" /></div><div class="modal-actions"><button class="btn primary" id="saveSecretBtn">Save & Open</button></div></div></div>
+
+<div id="newOverlay" class="overlay hidden"><div class="modal"><h2>New Project</h2><div class="small">Create a persistent project record. Transcripts, notes, tasks, and decisions can stay attached to it for later recall.</div>
+<div class="field"><label>Name</label><input id="newName" placeholder="Project name" /></div>
+<div class="field"><label>Description</label><textarea id="newDescription" placeholder="What is this project?"></textarea></div>
+<div class="field"><label>Category</label><input id="newCategory" placeholder="Work, Personal, Learning..." /></div>
+<div class="field"><label>Objective</label><textarea id="newObjective" placeholder="What does success look like?"></textarea></div>
+<div class="modal-actions"><button class="btn" id="cancelNewBtn">Cancel</button><button class="btn primary" id="createProjectBtn">Create</button></div>
+</div></div>
+
+<div class="app">
+<header><div class="top"><div><div class="title">Projects</div><div class="sub">Persistent project memory · tasks · decisions · transcript recall</div></div><div class="actions"><a class="btn" href="index.html">Think Tank</a><a class="btn" href="troubleshoot.html">Troubleshoot</a><button class="btn primary" id="newProjectBtn">New Project</button></div></div></header>
+<div class="layout">
+  <aside class="panel">
+    <div class="panel-head"><div><div class="panel-title">My Projects</div><div class="small" id="projectCount">0 projects</div></div><button class="btn" id="refreshBtn">↻</button></div>
+    <div class="project-list" id="projectList"><div class="empty">No projects yet.</div></div>
+  </aside>
+
+  <main class="content">
+    <section class="panel hero">
+      <div id="noProject" class="empty"><strong>Select or create a project.</strong><br>Each project can keep its own notes, tasks, Zoom transcripts, caption screenshots, and AI recall.</div>
+      <div id="projectView" style="display:none">
+        <div class="hero-grid">
+          <div>
+            <div class="field"><label>Project name</label><input id="pName" /></div>
+            <div class="field"><label>Description</label><textarea id="pDescription"></textarea></div>
+            <div class="field"><label>Objective</label><textarea id="pObjective"></textarea></div>
+          </div>
+          <div>
+            <div class="field"><label>Status</label><select id="pStatus"><option value="planned">Planned</option><option value="active">Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="archived">Archived</option></select></div>
+            <div class="field"><label>Category</label><input id="pCategory" /></div>
+            <div class="field"><label>Due date</label><input id="pDue" type="date" /></div>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>Current focus</label><textarea id="pFocus"></textarea></div>
+          <div class="field"><label>Next action</label><textarea id="pNext"></textarea></div>
+        </div>
+        <div class="overview-actions"><button class="btn primary" id="saveProjectBtn">Save Project</button></div>
+      </div>
+    </section>
+
+    <div class="grid2">
+      <section class="panel">
+        <div class="panel-head"><div><div class="panel-title">Tasks</div><div class="small">What still needs to happen</div></div></div>
+        <div class="section-body">
+          <div class="task-add"><input id="taskTitle" placeholder="Add a task..." /><select id="taskPriority"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option><option value="low">Low</option></select><button class="btn" id="addTaskBtn">Add</button></div>
+          <div class="task-list" id="taskList"><div class="empty">No tasks.</div></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><div><div class="panel-title">Project History</div><div class="small">Updates, decisions, milestones</div></div></div>
+        <div class="section-body">
+          <div class="note-row"><select id="eventType"><option value="update">Update</option><option value="decision">Decision</option><option value="milestone">Milestone</option><option value="blocker">Blocker</option><option value="meeting">Meeting</option><option value="idea">Idea</option><option value="note">Note</option></select><textarea id="eventText" placeholder="What changed, what was decided, or what should be remembered?"></textarea><button class="btn" id="addEventBtn">Log</button></div>
+          <div class="event-list" id="eventList"><div class="empty">No history yet.</div></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="panel-head"><div><div class="panel-title">Project Sources</div><div class="small">Transcripts and files used for recall</div></div></div>
+      <div class="section-body">
+        <div class="evidence-tools">
+          <button class="btn" id="transcriptBtn">+ Zoom Transcript</button>
+          <button class="btn" id="captionBtn">+ Caption Screenshot</button>
+          <button class="btn" id="fileBtn">+ Files / ZIP</button>
+          <input id="transcriptInput" type="file" multiple hidden accept=".vtt,.srt,.txt,.md,.log,text/plain,text/vtt,application/x-subrip" />
+          <input id="captionInput" type="file" multiple hidden accept="image/png,image/jpeg,image/webp,image/*" />
+          <input id="fileInput" type="file" multiple hidden accept=".txt,.md,.csv,.json,.sql,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.toml,.docx,.xlsx,.zip,text/plain,text/markdown,text/csv,application/json,application/zip,application/x-zip-compressed,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        </div>
+        <div class="source-list" id="sourceList"><div class="empty">No project sources yet.</div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><div><div class="panel-title">Ask This Project</div><div class="small">Uses project state, history, tasks, transcripts, and attached sources</div></div><button class="btn" id="clearChatBtn">Clear Chat</button></div>
+      <div class="chat">
+        <div class="chat-log" id="chatLog"><div class="empty">Ask what was discussed, what changed, what is still open, or what you should work on next.</div></div>
+        <div class="chat-compose"><textarea id="chatText" placeholder="Ask about this project..."></textarea><div style="display:flex;flex-direction:column;gap:7px"><button class="btn primary" id="askBtn">Ask</button><button class="btn" id="nextReplyBtn">Next Response</button></div></div>
+        <div class="status" id="status"></div>
+      </div>
+    </section>
+  </main>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.3/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.2/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+const BASE="https://ddxhpsgwxqoejghmsatg.supabase.co/functions/v1";
+const PROJECTS_URL=`${BASE}/projects`,RELAY_URL=`${BASE}/relay`;
+const SECRET_KEY="thinktank_relay_secret",SELECTED_KEY="thinktank_selected_project_v1";
+let projects=[],project=null,events=[],tasks=[],sources=[],transcript=[],nextSpeaker="GPT",busy=false;
+const $=id=>document.getElementById(id);
+function secret(){return localStorage.getItem(SECRET_KEY)||""}
+function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
+function chatKey(id){return `thinktank_project_chat_${id}`}
+function nextKey(id){return `thinktank_project_next_${id}`}
+function loadChat(){if(!project){transcript=[];nextSpeaker="GPT";return}try{transcript=JSON.parse(localStorage.getItem(chatKey(project.id))||"[]")}catch{transcript=[]}nextSpeaker=localStorage.getItem(nextKey(project.id))||"GPT"}
+function saveChat(){if(!project)return;localStorage.setItem(chatKey(project.id),JSON.stringify(transcript));localStorage.setItem(nextKey(project.id),nextSpeaker)}
+async function post(url,payload){if(!secret()){$("setupOverlay").classList.remove("hidden");throw new Error("Relay secret required")}const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","x-relay-secret":secret()},body:JSON.stringify(payload)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d}
+function setBusy(v,msg=""){busy=v;if(msg)$("status").textContent=msg;document.querySelectorAll("button").forEach(b=>{if(!["saveSecretBtn"].includes(b.id))b.disabled=v})}
+function renderProjects(){
+  $("projectCount").textContent=`${projects.length} project${projects.length===1?"":"s"}`;
+  $("projectList").innerHTML=projects.length?projects.map(p=>`<button class="project-item ${project?.id===p.id?"active":""}" data-project="${p.id}"><div class="project-name">${esc(p.name)}</div><div class="project-meta">${esc(p.status)}${p.category?` · ${esc(p.category)}`:""}${p.next_action?` · next: ${esc(p.next_action.slice(0,55))}`:""}</div></button>`).join(""):'<div class="empty">No projects yet.</div>';
+  document.querySelectorAll("[data-project]").forEach(b=>b.onclick=()=>openProject(b.dataset.project));
+}
+function renderChat(){
+  $("chatLog").innerHTML=transcript.length?transcript.map(t=>`<div class="turn ${esc(t.speaker)}"><div class="turn-head">${esc(t.speaker)}</div><div class="turn-body">${esc(t.text)}</div></div>`).join(""):'<div class="empty">Ask what was discussed, what changed, what is still open, or what you should work on next.</div>';
+  $("chatLog").scrollTop=$("chatLog").scrollHeight;
+}
+function renderProject(){
+  renderProjects();renderChat();
+  $("noProject").style.display=project?"none":"block";$("projectView").style.display=project?"block":"none";
+  if(!project){$("taskList").innerHTML='<div class="empty">Select a project.</div>';$("eventList").innerHTML='<div class="empty">Select a project.</div>';$("sourceList").innerHTML='<div class="empty">Select a project.</div>';return}
+  $("pName").value=project.name||"";$("pDescription").value=project.description||"";$("pObjective").value=project.objective||"";$("pStatus").value=project.status||"active";$("pCategory").value=project.category||"";$("pDue").value=project.due_date||"";$("pFocus").value=project.current_focus||"";$("pNext").value=project.next_action||"";
+  $("taskList").innerHTML=tasks.length?tasks.map(t=>`<div class="task"><div class="task-top"><div class="task-title">${esc(t.title)}</div><select data-task-status="${t.id}"><option value="todo" ${t.status==="todo"?"selected":""}>To do</option><option value="doing" ${t.status==="doing"?"selected":""}>Doing</option><option value="blocked" ${t.status==="blocked"?"selected":""}>Blocked</option><option value="done" ${t.status==="done"?"selected":""}>Done</option><option value="cancelled" ${t.status==="cancelled"?"selected":""}>Cancelled</option></select></div><div class="task-meta">${esc(t.priority)}${t.due_date?` · due ${esc(t.due_date)}`:""}</div></div>`).join(""):'<div class="empty">No tasks.</div>';
+  document.querySelectorAll("[data-task-status]").forEach(s=>s.onchange=()=>updateTaskStatus(s.dataset.taskStatus,s.value));
+  $("eventList").innerHTML=events.length?[...events].reverse().slice(0,50).map(e=>`<div class="event"><div class="event-type">${esc(e.event_type)} #${e.sequence}</div><div class="event-text">${esc(e.content)}</div><div class="event-meta">${new Date(e.created_at).toLocaleString()}</div></div>`).join(""):'<div class="empty">No history yet.</div>';
+  $("sourceList").innerHTML=sources.length?sources.map(s=>`<div class="source"><div class="source-name">${esc(s.file_name)}</div><div class="source-meta">${esc(s.source_type)} · ${Number(s.char_count||0).toLocaleString()} chars · ${new Date(s.created_at).toLocaleString()}</div></div>`).join(""):'<div class="empty">No project sources yet.</div>';
+}
+async function loadProjects(){
+  try{const d=await post(PROJECTS_URL,{action:"list"});projects=Array.isArray(d.projects)?d.projects:[];renderProjects();const selected=localStorage.getItem(SELECTED_KEY);if(selected&&projects.some(p=>p.id===selected))await openProject(selected);else if(projects.length&&!project)await openProject(projects[0].id)}catch(err){$("status").textContent=`Project load failed: ${err.message}`}
+}
+async function openProject(id){
+  try{const d=await post(PROJECTS_URL,{action:"get",projectId:id});project=d.project;events=d.events||[];tasks=d.tasks||[];sources=d.sources||[];localStorage.setItem(SELECTED_KEY,id);loadChat();renderProject()}catch(err){$("status").textContent=`Open failed: ${err.message}`}
+}
+async function createProject(){
+  const name=$("newName").value.trim();if(!name)return;
+  try{const d=await post(PROJECTS_URL,{action:"create",name,description:$("newDescription").value.trim(),category:$("newCategory").value.trim(),objective:$("newObjective").value.trim()});$("newOverlay").classList.add("hidden");await loadProjects();await openProject(d.project.id);$("status").textContent="Project created."}catch(err){$("status").textContent=`Create failed: ${err.message}`}
+}
+async function saveProject(){
+  if(!project)return;
+  try{const d=await post(PROJECTS_URL,{action:"update",projectId:project.id,name:$("pName").value.trim(),description:$("pDescription").value.trim(),objective:$("pObjective").value.trim(),status:$("pStatus").value,category:$("pCategory").value.trim(),dueDate:$("pDue").value,currentFocus:$("pFocus").value.trim(),nextAction:$("pNext").value.trim()});project=d.project;await loadProjects();$("status").textContent="Project updated."}catch(err){$("status").textContent=`Save failed: ${err.message}`}
+}
+async function addTask(){
+  if(!project)return;const title=$("taskTitle").value.trim();if(!title)return;
+  try{await post(PROJECTS_URL,{action:"add_task",projectId:project.id,title,priority:$("taskPriority").value});$("taskTitle").value="";await openProject(project.id);$("status").textContent="Task added."}catch(err){$("status").textContent=`Task failed: ${err.message}`}
+}
+async function updateTaskStatus(taskId,status){
+  try{await post(PROJECTS_URL,{action:"update_task",taskId,status});await openProject(project.id)}catch(err){$("status").textContent=`Task update failed: ${err.message}`}
+}
+async function addEvent(){
+  if(!project)return;const content=$("eventText").value.trim();if(!content)return;
+  try{await post(PROJECTS_URL,{action:"add_event",projectId:project.id,eventType:$("eventType").value,content});$("eventText").value="";await openProject(project.id);$("status").textContent="Project history updated."}catch(err){$("status").textContent=`Log failed: ${err.message}`}
+}
+async function askProject(isNext=false){
+  if(busy||!project)return;const message=$("chatText").value.trim();if(!isNext&&!message)return;if(isNext&&!transcript.length){$("status").textContent="Ask the project something first.";return}
+  setBusy(true,isNext?`${nextSpeaker} is responding...`:"Project memory is responding...");
+  try{
+    const payload=isNext?{action:"next",transcript,nextSpeaker,projectId:project.id,route:{mode:"single",order:[nextSpeaker]}}:{action:"message",message,transcript,nextSpeaker,projectId:project.id,route:{mode:"both",order:["GPT","Claude"]}};
+    const d=await post(RELAY_URL,payload);transcript=Array.isArray(d.transcript)?d.transcript:transcript;nextSpeaker=d.nextSpeaker==="Claude"?"Claude":"GPT";saveChat();renderChat();if(!isNext)$("chatText").value="";$("status").textContent=d.providerNotice||"Project memory updated.";
+  }catch(err){$("status").textContent=`Project chat failed: ${err.message}`}finally{setBusy(false)}
+}
+function fileToDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||""));r.onerror=()=>reject(r.error||new Error("file read failed"));r.readAsDataURL(file)})}
+async function prepareImage(file){const original=await fileToDataUrl(file);const img=await new Promise((resolve,reject)=>{const el=new Image();el.onload=()=>resolve(el);el.onerror=()=>reject(new Error("image decode failed"));el.src=original});const max=Math.max(img.naturalWidth,img.naturalHeight);if(max<=2200&&file.size<=7_500_000)return original;const scale=Math.min(1,2200/max),canvas=document.createElement("canvas");canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);return canvas.toDataURL("image/jpeg",0.92)}
+async function uploadTranscripts(fileList){
+  if(!project)return;setBusy(true,"Importing transcript...");
+  try{for(const file of Array.from(fileList||[])){const txt=await file.text();await post(PROJECTS_URL,{action:"ingest_text_source",projectId:project.id,fileName:file.name,mimeType:file.type||"text/plain",sourceType:file.name.toLowerCase().endsWith(".vtt")||file.name.toLowerCase().endsWith(".srt")?"zoom_transcript":"text_transcript",text:txt})}await openProject(project.id);$("status").textContent="Transcript added to project recall."}catch(err){$("status").textContent=`Transcript failed: ${err.message}`}finally{setBusy(false);$("transcriptInput").value=""}
+}
+async function uploadCaptions(fileList){
+  if(!project)return;setBusy(true,"Extracting captions...");
+  try{for(const file of Array.from(fileList||[])){const dataUrl=await prepareImage(file);await post(PROJECTS_URL,{action:"ingest_caption_image",projectId:project.id,fileName:file.name,dataUrl})}await openProject(project.id);$("status").textContent="Caption screenshot added to project recall."}catch(err){$("status").textContent=`Caption import failed: ${err.message}`}finally{setBusy(false);$("captionInput").value=""}
+}
+const TX=new Set(["txt","md","csv","json","sql","js","ts","py","html","css","xml","yaml","yml","log","ini","cfg","conf","toml"]),WD=new Set(["docx"]),XL=new Set(["xlsx"]),ZA=new Set(["zip"]);
+function ext(n){return(String(n).split(".").pop()||"").toLowerCase()}function supported(n){const e=ext(n);return TX.has(e)||WD.has(e)||XL.has(e)||ZA.has(e)}
+async function normalizeXlsx(buffer){const zip=await window.JSZip.loadAsync(buffer),names=Object.keys(zip.files);if(!names.some(n=>n.includes("\\")))return buffer;const clean=new window.JSZip();for(const [name,entry] of Object.entries(zip.files)){const normalized=name.replaceAll("\\","/");if(entry.dir)clean.folder(normalized.replace(/\/$/,""));else clean.file(normalized,await entry.async("uint8array"))}return clean.generateAsync({type:"arraybuffer",compression:"DEFLATE"})}
+async function extractText(item){const e=ext(item.name);if(WD.has(e)){const r=await window.mammoth.extractRawText({arrayBuffer:item.buffer});return String(r?.value||"").trim()}if(XL.has(e)){const wb=window.XLSX.read(await normalizeXlsx(item.buffer),{type:"array",cellDates:true});return wb.SheetNames.map(n=>{const csv=window.XLSX.utils.sheet_to_csv(wb.Sheets[n],{blankrows:false});return csv.trim()?`### SHEET: ${n}\n${csv.trim()}`:""}).filter(Boolean).join("\n\n")}return new TextDecoder("utf-8",{fatal:false}).decode(item.buffer).trim()}
+async function expandZip(buffer,prefix,depth=1){if(depth>3)throw new Error("ZIP nesting too deep");const zip=await window.JSZip.loadAsync(buffer),out=[];for(const [name,entry] of Object.entries(zip.files)){if(entry.dir||!supported(name))continue;const b=await entry.async("arraybuffer"),full=`${prefix}/${name}`;if(ZA.has(ext(name)))out.push(...await expandZip(b,full,depth+1));else out.push({name:full,buffer:b})}return out}
+async function uploadFiles(fileList){
+  if(!project)return;setBusy(true,"Importing project files...");
+  try{let items=[];for(const file of Array.from(fileList||[])){if(!supported(file.name))continue;const buffer=await file.arrayBuffer();if(ZA.has(ext(file.name)))items.push(...await expandZip(buffer,file.name));else items.push({name:file.name,buffer})}
+    for(const item of items){const txt=await extractText(item);if(!txt.trim())continue;for(let o=0,p=1;o<txt.length;o+=1_400_000,p++){const slice=txt.slice(o,o+1_400_000);await post(PROJECTS_URL,{action:"ingest_text_source",projectId:project.id,fileName:txt.length>1_400_000?`${item.name} [part ${p}]`:item.name,mimeType:"text/plain",sourceType:"document",text:slice})}}
+    await openProject(project.id);$("status").textContent=`Imported ${items.length} project file${items.length===1?"":"s"}.`;
+  }catch(err){$("status").textContent=`File import failed: ${err.message}`}finally{setBusy(false);$("fileInput").value=""}
+}
+$("newProjectBtn").onclick=()=>$("newOverlay").classList.remove("hidden");$("cancelNewBtn").onclick=()=>$("newOverlay").classList.add("hidden");$("createProjectBtn").onclick=createProject;$("saveProjectBtn").onclick=saveProject;$("addTaskBtn").onclick=addTask;$("addEventBtn").onclick=addEvent;$("askBtn").onclick=()=>askProject(false);$("nextReplyBtn").onclick=()=>askProject(true);$("refreshBtn").onclick=loadProjects;$("clearChatBtn").onclick=()=>{if(!project)return;transcript=[];nextSpeaker="GPT";saveChat();renderChat();$("status").textContent="Project chat cleared; persistent project memory remains."};
+$("transcriptBtn").onclick=()=>project?$("transcriptInput").click():$("status").textContent="Select a project first.";$("captionBtn").onclick=()=>project?$("captionInput").click():$("status").textContent="Select a project first.";$("fileBtn").onclick=()=>project?$("fileInput").click():$("status").textContent="Select a project first.";$("transcriptInput").onchange=e=>uploadTranscripts(e.target.files);$("captionInput").onchange=e=>uploadCaptions(e.target.files);$("fileInput").onchange=e=>uploadFiles(e.target.files);
+$("saveSecretBtn").onclick=async()=>{const v=$("secretInput").value.trim();if(!v)return;localStorage.setItem(SECRET_KEY,v);$("secretInput").value="";$("setupOverlay").classList.add("hidden");await loadProjects()};
+$("chatText").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")askProject(false)});
+if(!secret())$("setupOverlay").classList.remove("hidden");else loadProjects();
+</script>
+</body></html>
