@@ -383,6 +383,80 @@ These are uploaded incident sources tied to the active troubleshooting session, 
 ${selected.join("\n\n---\n\n")}`;
 }
 
+
+async function getProjectContext(projectId: unknown, searchBasis: string) {
+  const id=typeof projectId==="string" ? projectId.trim() : "";
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) return "";
+
+  const [{data:project,error:pErr},{data:events,error:eErr},{data:tasks,error:tErr},{data:sources,error:sErr}] = await Promise.all([
+    supabase.from("thinktank_projects").select("*").eq("id",id).single(),
+    supabase.from("thinktank_project_events").select("sequence,event_type,content,created_at").eq("project_id",id).order("sequence",{ascending:false}).limit(40),
+    supabase.from("thinktank_project_tasks").select("title,status,priority,due_date,notes").eq("project_id",id).order("created_at",{ascending:true}).limit(100),
+    supabase.from("thinktank_project_sources").select("id,source_type,file_name,created_at").eq("project_id",id).eq("status","ready").order("created_at",{ascending:false}).limit(100)
+  ]);
+  if(pErr || !project) return "";
+
+  const projectBlock=`ACTIVE PROJECT
+Name: ${project.name}
+Status: ${project.status}
+Category: ${project.category || "unspecified"}
+Description: ${project.description || ""}
+Objective: ${project.objective || ""}
+Current focus: ${project.current_focus || ""}
+Next action: ${project.next_action || ""}
+Due date: ${project.due_date || "none"}
+
+PROJECT RULES
+Use this project record as persistent personal project context. Distinguish current project state, recorded decisions, tasks, and transcript statements. Meeting/transcript statements are evidence of what was said, not automatically verified fact. When asked what was decided or discussed, cite the project history internally by speaker/source and avoid inventing missing details.`;
+
+  const eventBlock=!eErr && events?.length
+    ? `RECENT PROJECT HISTORY
+${[...events].reverse().map((e:any)=>`#${e.sequence} [${e.event_type}] ${e.content}`).join("\n")}`
+    : "";
+
+  const taskBlock=!tErr && tasks?.length
+    ? `PROJECT TASKS
+${tasks.map((t:any)=>`- [${t.status}] [${t.priority}] ${t.title}${t.due_date?` | due ${t.due_date}`:""}${t.notes?` | ${t.notes}`:""}`).join("\n")}`
+    : "";
+
+  let sourceBlock="";
+  if(!sErr && sources?.length){
+    const sourceIds=sources.map((s:any)=>s.id);
+    const {data:chunks,error:cErr}=await supabase
+      .from("thinktank_project_source_chunks")
+      .select("source_id,chunk_index,content")
+      .in("source_id",sourceIds)
+      .order("chunk_index",{ascending:true})
+      .limit(800);
+    if(!cErr && chunks?.length){
+      const terms=[...new Set((searchBasis.toLowerCase().match(/[a-z0-9_]{4,}/g) ?? []).filter((w)=>!STOPWORDS.has(w)))].slice(-30);
+      const sourceMap=new Map(sources.map((s:any)=>[s.id,s]));
+      const ranked=(chunks as any[]).map((chunk:any)=>{
+        const lower=String(chunk.content||"").toLowerCase();
+        const termScore=terms.reduce((sum,term)=>sum+(lower.includes(term)?1:0),0);
+        const source=sourceMap.get(chunk.source_id) as any;
+        const recencyScore=source ? Math.max(0,1-(Date.now()-new Date(source.created_at).getTime())/(1000*60*60*24*60)) : 0;
+        return {chunk,source,score:termScore*3+recencyScore-(Number(chunk.chunk_index)||0)*0.01};
+      }).sort((a,b)=>b.score-a.score);
+      let total=0; const selected:string[]=[];
+      for(const row of ranked){
+        if(!row.source) continue;
+        const block=`[PROJECT SOURCE: ${row.source.file_name} | type ${row.source.source_type} | section ${Number(row.chunk.chunk_index)+1}]\n${row.chunk.content}`;
+        if(total+block.length>28_000) continue;
+        selected.push(block); total+=block.length;
+        if(selected.length>=12) break;
+      }
+      if(selected.length){
+        sourceBlock=`PROJECT SOURCE EXCERPTS
+These excerpts come from transcripts, caption screenshots, documents, or notes attached to this project. Preserve speaker/source attribution when available. They support recall of what was discussed or recorded, but do not silently convert participant statements into verified facts.
+
+${selected.join("\n\n---\n\n")}`;
+      }
+    }
+  }
+  return [projectBlock,eventBlock,taskBlock,sourceBlock].filter(Boolean).join("\n\n====\n\n");
+}
+
 // Attachments live in the chat transcript, never in the global knowledge index.
 // Select bounded, labeled excerpts for every turn, including Next and Finalize.
 function chatAttachmentContext(transcript: Turn[], searchBasis: string) {
@@ -764,11 +838,12 @@ Deno.serve(async (req) => {
       if (!message && attachments.length === 0) return json({ error: "message is required" }, 400);
       const working: Turn[] = [...transcript, { speaker: "Dylan", text: message || "Please review the attached file(s).", attachments: attachments.length ? attachments : undefined }];
       const searchBasis=recentSearchBasis(working, message);
-      const [knowledge,troubleContext] = await Promise.all([
+      const [knowledge,troubleContext,projectContext] = await Promise.all([
         getKnowledgeContext(searchBasis),
-        getTroubleshootingSourceContext(body.troubleshootingSessionId,searchBasis)
+        getTroubleshootingSourceContext(body.troubleshootingSessionId,searchBasis),
+        getProjectContext(body.projectId,searchBasis)
       ]);
-      const context = [knowledge.context,troubleContext,chatAttachmentContext(working,searchBasis)].filter(Boolean).join("\n\n====\n\n");
+      const context = [knowledge.context,projectContext,troubleContext,chatAttachmentContext(working,searchBasis)].filter(Boolean).join("\n\n====\n\n");
       let gptTokens = 0, claudeTokens = 0;
       let providerNotice = "";
       const plannedRoute = normalizeRoute(body.route, requestedSpeaker, 2);
@@ -804,11 +879,12 @@ Deno.serve(async (req) => {
     if (action === "next") {
       if (!transcript.length) return json({ error: "start a conversation before requesting the next response" }, 400);
       const searchBasis=recentSearchBasis(transcript);
-      const [knowledge,troubleContext] = await Promise.all([
+      const [knowledge,troubleContext,projectContext] = await Promise.all([
         getKnowledgeContext(searchBasis),
-        getTroubleshootingSourceContext(body.troubleshootingSessionId,searchBasis)
+        getTroubleshootingSourceContext(body.troubleshootingSessionId,searchBasis),
+        getProjectContext(body.projectId,searchBasis)
       ]);
-      const context = [knowledge.context,troubleContext,chatAttachmentContext(transcript,searchBasis)].filter(Boolean).join("\n\n====\n\n");
+      const context = [knowledge.context,projectContext,troubleContext,chatAttachmentContext(transcript,searchBasis)].filter(Boolean).join("\n\n====\n\n");
       const instruction = ["Continue the discussion from the exact point it currently stands. Do not pretend Dylan spoke again. Make the most useful next contribution. You may extend a sound idea, add missing analysis, correct a material issue, reframe the problem, or briefly confirm something that is already right. Do not manufacture disagreement or repeat points that are already settled.", helper].filter(Boolean).join("\n\n");
       const nextRoute = normalizeRoute(body.route, requestedSpeaker, 1);
       const selectedSpeaker = nextRoute[0] || requestedSpeaker;
@@ -835,11 +911,12 @@ Deno.serve(async (req) => {
     if (action === "finalize_step" || action === "finalize") {
       if (!transcript.length) return json({ error: "start a conversation before finalizing" }, 400);
       const searchBasis=recentSearchBasis(transcript);
-      const [knowledge,troubleContext] = await Promise.all([
+      const [knowledge,troubleContext,projectContext] = await Promise.all([
         getKnowledgeContext(searchBasis),
-        getTroubleshootingSourceContext(body.troubleshootingSessionId,searchBasis)
+        getTroubleshootingSourceContext(body.troubleshootingSessionId,searchBasis),
+        getProjectContext(body.projectId,searchBasis)
       ]);
-      const context = [knowledge.context,troubleContext,chatAttachmentContext(transcript,searchBasis),helper].filter(Boolean).join("\n\n====\n\n");
+      const context = [knowledge.context,projectContext,troubleContext,chatAttachmentContext(transcript,searchBasis),helper].filter(Boolean).join("\n\n====\n\n");
       try {
         const result = await finalizeStep(transcript, requestedSpeaker, body.finalizationState, context);
         return json({ ...result, knowledge: { chunksUsed: knowledge.chunks.length, filesUsed: [...new Set(knowledge.chunks.map((c) => c.document_name))] } });
