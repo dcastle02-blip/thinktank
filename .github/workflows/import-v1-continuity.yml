@@ -1,0 +1,29 @@
+name: Import V1 Continuity Mirror
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-v1-continuity.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download latest V1 continuity build
+        run: |
+          curl -L --fail --retry 3 'https://sdmntpreastus2.oaiusercontent.com/files/00000000-76ac-81f6-b33b-259d440e66f0/raw?se=2026-09-30T15%3A59%3A21Z&sp=r&sv=2026-02-06&sr=b&scid=b1d73f1f-047a-526e-93ed-df22c2be11f8&skoid=dd316919-ffbf-4550-9c54-dfc99f412009&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-30T12%3A29%3A25Z&ske=2026-10-01T12%3A29%3A25Z&sks=b&skv=2026-02-06&sig=WJkv/HVcsU4BSSObmX5ncoMKdhHG8QrFmPN1EjnFqGw%3D' -o /tmp/thinktank-v1.zip
+          rm -rf v1
+          mkdir -p v1
+          unzip -q /tmp/thinktank-v1.zip -d v1
+      - name: Publish continuity mirror
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add v1
+          git commit -m "Publish Think Tank V1 continuity and succession"
+          git push
