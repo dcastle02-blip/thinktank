@@ -23,11 +23,11 @@ header{position:sticky;top:0;z-index:20;padding:max(14px,env(safe-area-inset-top
 <div id="openOverlay" class="overlay hidden"><div class="modal"><h2>Open troubleshooting session</h2><div class="small">Resume an existing incident without losing its diagnostic trail.</div><div id="sessionList" style="display:flex;flex-direction:column;gap:8px;margin-top:12px"></div><div class="modal-actions"><button class="btn" id="closeOpenBtn">Close</button></div></div></div>
 
 <div id="newOverlay" class="overlay hidden"><div class="modal"><h2>Start troubleshooting</h2><div class="small">Create one incident record. The chat will stay focused on diagnosis and the event log will preserve what was observed, tested, and resolved.</div>
-<div class="field"><label>Issue title</label><input id="issueTitle" placeholder="Inbound ASRS entry rejects" /></div>
+<div class="field"><label>Issue title</label><input id="issueTitle" placeholder="Inbound scanner exception" /></div>
 <div class="field"><label>Initial symptom</label><textarea id="issueSymptom" placeholder="What is physically or systemically happening?"></textarea></div>
-<div class="field"><label>Facility</label><input id="issueFacility" placeholder="LVO" /></div>
-<div class="field"><label>Process area</label><input id="issueProcess" placeholder="Inbound ASRS" /></div>
-<div class="field"><label>Systems (comma separated)</label><input id="issueSystems" placeholder="WMOS, Vargo/COFE, IBM MQ, Neuron, TGW Commander, PLC" /></div>
+<div class="field"><label>Facility</label><input id="issueFacility" placeholder="DC-01" /></div>
+<div class="field"><label>Process area</label><input id="issueProcess" placeholder="Inbound receiving" /></div>
+<div class="field"><label>Systems (comma separated)</label><input id="issueSystems" placeholder="SYS-WMS, SYS-WCS, SYS-CTRL" /></div>
 <div class="modal-actions"><button class="btn" id="cancelNewBtn">Cancel</button><button class="btn primary" id="createIssueBtn">Start Issue</button></div>
 </div></div>
 
